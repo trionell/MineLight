@@ -2,6 +2,12 @@
 // Plain Java 21, no Minecraft dependencies — testable and reusable.
 plugins {
     id 'java-library'
+    id 'application'
+}
+
+application {
+    // Headless lighting engine: gradle :minelight-core:run
+    mainClass = 'net.minelight.core.MineLightServer'
 }
 
 group = 'net.minelight'
