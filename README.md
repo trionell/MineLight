@@ -8,6 +8,7 @@ MineLight turns your Minecraft world into a fully patched lighting rig. Every re
 
 ## Why MineLight?
 
+- **Minecraft is the controller** — place fixture blocks, feed them redstone, and they drive real-world lights through your console (Minecraft → console → DMX).
 - **Fun** — run your base's lighting like a stadium show. Strobe on a raid, warm fades at sunrise, a lighting desk in your survival world.
 - **Highly customizable** — fixtures, presets, cue lists, and a full Lua trigger engine.
 - **Redstone integration is a must** — redstone changes drive lights, and console levels can drive redstone (readback).
@@ -90,6 +91,23 @@ public class MyConsoleBackend implements ConsoleBackend {
 | WebSocket | 8090/tcp | in+out | WebConsole live sync |
 | MIDI | USB/virtual | in | Midi Fighter Twister, controllers |
 | mDNS | 5353/udp | discovery | auto-discovery on the LAN |
+
+---
+
+## Fixture blocks (the main way to play)
+
+MineLight adds four blocks. Feed them redstone, right-click to configure, and they drive real lights through your console.
+
+| Block | Input | What it does |
+|---|---|---|
+| **Dimmer Fixture** | one redstone input | Signal strength 0–15 scales to DMX 0–255 on its channel. Lever = on/off, comparator = analog fader. |
+| **RGB Fixture** | three inputs on three faces | North = red, east = green, west = blue (configurable). Three comparator lines = a tiny analog RGB mixer. |
+| **Event Fixture** | boolean redstone edge | Each rising edge fires a custom event (e.g. `custom.block4`) at the console. Pressure plate → cue. |
+| **Feedback Fixture** | none (output) | Receives the console's level and emits redstone 0–15 proportional to it. Fader at 50% → piston halfway. |
+
+Right-click any fixture block to open its config screen: pick the redstone face, the DMX universe.channel, or the event name. Everything saves with the world.
+
+The coordinate-based patch from earlier versions still works if you want invisible integration — fixture blocks are just the friendly, physical front-end.
 
 ---
 
@@ -220,7 +238,7 @@ Requirements: JDK 21+. Gradle 9.x is used from your system `gradle`.
 - [ ] GrandMA2 fixture-library (`.xml`) export backend
 - [ ] GrandMA3 MVR / GDTF export backend
 - [ ] Avolites Titan personality file export
-- [ ] In-world fixture block + GUI editor
+- [x] In-world fixture blocks (Dimmer / RGB / Event / Feedback) + right-click config GUI
 - [ ] Moving-head fixtures with pan/tilt
 - [ ] Pixel mapping for beacon arrays
 - [ ] Sound-to-light via Minecraft's jukebox / note blocks

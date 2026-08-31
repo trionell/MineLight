@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:block",
+  "pools": [{
+    "rolls": 1,
+    "entries": [{ "type": "minecraft:item", "name": "minelight:event_block" }],
+    "conditions": [{ "condition": "minecraft:survives_explosion" }]
+  }]
+}

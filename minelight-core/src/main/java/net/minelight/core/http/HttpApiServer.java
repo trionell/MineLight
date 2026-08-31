@@ -89,6 +89,7 @@ public final class HttpApiServer implements ProtocolServer {
         server.createContext("/api/redstone", this::handleRedstone);
         server.createContext("/api/script", this::handleScript);
         server.createContext("/api/status", this::handleStatus);
+        server.createContext("/api/blocks", this::handleBlocks);
 
         server.start();
     }
@@ -303,6 +304,23 @@ public final class HttpApiServer implements ProtocolServer {
         JsonObject o = new JsonObject();
         engine.redstoneSnapshot().forEach((id, on) -> o.addProperty(String.valueOf(id), on));
         sendJson(ex, 200, o);
+    }
+
+    /** List / inspect fixture blocks. */
+    private void handleBlocks(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            sendError(ex, 405, "Method not allowed");
+            return;
+        }
+        JsonArray arr = new JsonArray();
+        for (var b : engine.blocks().all()) {
+            JsonObject o = b.toJson();
+            if (b.type() == net.minelight.core.api.FixtureBlock.Type.FEEDBACK) {
+                o.addProperty("feedbackLevel", engine.blocks().feedbackLevel(b.id()));
+            }
+            arr.add(o);
+        }
+        sendJson(ex, 200, arr);
     }
 
     private void handleScript(HttpExchange ex) throws IOException {

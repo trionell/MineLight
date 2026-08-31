@@ -11,6 +11,9 @@ import net.minelight.core.mdns.MdnsAdvertiser;
 import net.minelight.core.osc.OscServer;
 import net.minelight.core.sacn.SacnServer;
 import net.minelight.core.webconsole.WebConsoleServer;
+import net.minelight.fabric.block.ModBlocks;
+import net.minelight.fabric.blockentity.ModBlockEntities;
+import net.minelight.fabric.screen.ModScreenHandlers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,6 +35,7 @@ public final class MineLightMod implements ModInitializer {
 
     private static ConsoleEngine engine;
     private static RedstoneBridge redstoneBridge;
+    private static FixtureBlockBridge fixtureBlockBridge;
     private static MdnsAdvertiser mdns;
 
     public static ConsoleEngine engine() {
@@ -41,6 +45,11 @@ public final class MineLightMod implements ModInitializer {
     @Override
     public void onInitialize() {
         LOGGER.info("[MineLight] Initializing");
+
+        // blocks, block entities, screens
+        ModBlocks.register();
+        ModBlockEntities.register();
+        ModScreenHandlers.register();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 MLCommand.register(dispatcher));
@@ -75,6 +84,10 @@ public final class MineLightMod implements ModInitializer {
                 // redstone bridge polls the world each tick
                 redstoneBridge = new RedstoneBridge(engine);
                 ServerTickEvents.END_SERVER_TICK.register(redstoneBridge::tick);
+
+                // fixture blocks: redstone in -> DMX out, console levels -> redstone out
+                fixtureBlockBridge = new FixtureBlockBridge(engine);
+                ServerTickEvents.END_SERVER_TICK.register(fixtureBlockBridge::tick);
 
                 LOGGER.info("[MineLight] Engine started. WebConsole: http://localhost:8090/");
             } catch (Exception e) {
