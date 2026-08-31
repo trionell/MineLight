@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="net.minelight.core.EngineTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-08-31T19:51:21.815Z" hostname="runnervmgx7h7" time="0.162">
+  <properties/>
+  <testcase name="patchAddAndSerialize()" classname="net.minelight.core.EngineTest" time="0.041"/>
+  <testcase name="engineDmxMerge()" classname="net.minelight.core.EngineTest" time="0.067"/>
+  <testcase name="cueListAdvances()" classname="net.minelight.core.EngineTest" time="0.007"/>
+  <testcase name="redstoneEventsFire()" classname="net.minelight.core.EngineTest" time="0.005"/>
+  <testcase name="presetsApply()" classname="net.minelight.core.EngineTest" time="0.006"/>
+  <testcase name="luaTriggerRuns()" classname="net.minelight.core.EngineTest" time="0.011"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

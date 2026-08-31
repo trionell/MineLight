@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "minelight",
+  "version": "0.1.0",
+  "name": "MineLight",
+  "description": "Connect lighting consoles (GrandMA2, GrandMA3, Avolites Titan, and the built-in WebConsole) to Minecraft. Drive in-game lights over Art-Net, sACN, OSC, MIDI, HTTP and MQTT; trigger cues from redstone, command blocks and game events.",
+  "authors": ["MineLight contributors"],
+  "contact": {
+    "homepage": "https://github.com/trionell/MineLight",
+    "sources": "https://github.com/trionell/MineLight"
+  },
+  "license": "MIT",
+  "icon": "assets/minelight/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "net.minelight.fabric.MineLightMod"
+    ],
+    "client": [
+      "net.minelight.fabric.MineLightClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.8",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}
