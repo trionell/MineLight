@@ -1,0 +1,8 @@
+.gradle/
+build/
+*/build/
+out/
+*.class
+*.jar
+!.gitkeep
+run/

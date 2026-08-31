@@ -337,6 +337,9 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
                             len = (len << 8) | (in.read() & 0xFF);
                         }
                     }
+                    if (len > 1 << 20) { // 1 MiB cap
+                        break;
+                    }
                     byte[] mask = new byte[4];
                     if (masked) {
                         in.readNBytes(mask, 0, 4);

@@ -155,6 +155,9 @@ public final class MLCommand {
 
     private static int cueGo(ServerCommandSource source, String list, int index) {
         var engine = MineLightMod.engine();
+        if (engine == null) {
+            return 0;
+        }
         var cl = engine.cueList(list);
         var cue = index < 0 ? cl.next() : cl.go(index);
         if (cue != null && cue.levels() != null) {

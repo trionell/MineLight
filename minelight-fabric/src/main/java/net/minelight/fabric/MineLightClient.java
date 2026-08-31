@@ -29,7 +29,12 @@ public final class MineLightClient implements ClientModInitializer {
                 // Open the WebConsole in the system browser
                 String url = "http://localhost:8090/";
                 try {
-                    java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                    if (java.awt.Desktop.isDesktopSupported()
+                            && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                        java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                    } else {
+                        MineLightMod.LOGGER.info("[MineLight] Open the WebConsole at {}", url);
+                    }
                 } catch (Exception e) {
                     MineLightMod.LOGGER.warn("[MineLight] Could not open browser: {}", e.getMessage());
                 }

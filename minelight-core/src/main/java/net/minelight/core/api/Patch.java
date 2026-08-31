@@ -94,12 +94,20 @@ public final class Patch {
     private final java.util.List<Fixture> fixtures = new java.util.ArrayList<>();
     private int nextId = 1;
 
-    /** Add a fixture and return its assigned id. */
+    /** Add a fixture (redstone readback disabled by default) and return its id. */
     public synchronized int addFixture(String name, FixtureMode mode,
                                        int universe, int address,
                                        int x, int y, int z, String kind) {
+        return addFixture(name, mode, universe, address, x, y, z, kind, false);
+    }
+
+    /** Add a fixture and return its assigned id. */
+    public synchronized int addFixture(String name, FixtureMode mode,
+                                       int universe, int address,
+                                       int x, int y, int z, String kind,
+                                       boolean redstone) {
         int id = nextId++;
-        fixtures.add(new Fixture(id, name, mode, universe, address, x, y, z, kind, true));
+        fixtures.add(new Fixture(id, name, mode, universe, address, x, y, z, kind, redstone));
         return id;
     }
 

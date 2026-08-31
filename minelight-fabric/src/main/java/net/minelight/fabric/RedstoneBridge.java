@@ -16,12 +16,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class RedstoneBridge {
 
-    private final MinecraftServer server;
     private final ConsoleEngine engine;
     private final Map<Integer, Boolean> lastState = new ConcurrentHashMap<>();
 
-    public RedstoneBridge(MinecraftServer server, ConsoleEngine engine) {
-        this.server = server;
+    public RedstoneBridge(ConsoleEngine engine) {
         this.engine = engine;
     }
 

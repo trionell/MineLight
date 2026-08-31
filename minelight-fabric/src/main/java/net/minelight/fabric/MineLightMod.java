@@ -32,6 +32,7 @@ public final class MineLightMod implements ModInitializer {
 
     private static ConsoleEngine engine;
     private static RedstoneBridge redstoneBridge;
+    private static MdnsAdvertiser mdns;
 
     public static ConsoleEngine engine() {
         return engine;
@@ -65,14 +66,14 @@ public final class MineLightMod implements ModInitializer {
                 engine.start();
 
                 // mDNS discovery
-                MdnsAdvertiser mdns = new MdnsAdvertiser();
+                mdns = new MdnsAdvertiser();
                 mdns.register("_artnet._udp", "MineLight", 6454, Map.of("type", "artnet"));
                 mdns.register("_http._tcp", "MineLight WebConsole", 8090,
                         Map.of("path", "/", "type", "minelight-webconsole"));
                 mdns.start();
 
                 // redstone bridge polls the world each tick
-                redstoneBridge = new RedstoneBridge(server, engine);
+                redstoneBridge = new RedstoneBridge(engine);
                 ServerTickEvents.END_SERVER_TICK.register(redstoneBridge::tick);
 
                 LOGGER.info("[MineLight] Engine started. WebConsole: http://localhost:8090/");
@@ -82,6 +83,10 @@ public final class MineLightMod implements ModInitializer {
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            if (mdns != null) {
+                mdns.close();
+                mdns = null;
+            }
             if (engine != null) {
                 engine.stop();
                 engine = null;

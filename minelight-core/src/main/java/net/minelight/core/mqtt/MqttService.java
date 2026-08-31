@@ -128,9 +128,9 @@ public final class MqttService implements AutoCloseable {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
             try {
                 if (topic.endsWith("/set")) {
-                    // minelight/fixture/<id>/set
+                    // <prefix>/fixture/<id>/set — id is the segment before "set"
                     String[] parts = topic.split("/");
-                    int id = Integer.parseInt(parts[2]);
+                    int id = Integer.parseInt(parts[parts.length - 2]);
                     JsonObject o = GSON.fromJson(payload, JsonObject.class);
                     if (o.has("intensity")) {
                         engine.setFixtureIntensity(id, o.get("intensity").getAsInt());
