@@ -16,12 +16,17 @@ public final class ModScreenHandlers {
     }
 
     public static ScreenHandlerType<FixtureScreenHandler> FIXTURE;
+    public static ScreenHandlerType<SoundScreenHandler> SOUND;
 
     public static void register() {
         FIXTURE = Registry.register(Registries.SCREEN_HANDLER,
                 Identifier.of(MineLightMod.MOD_ID, "fixture"),
                 new ScreenHandlerType<>((syncId, inv) -> {
-                    // client side: block entity resolved from the screen factory
+                    throw new UnsupportedOperationException("client-side factory via FabricScreenRegistry");
+                }, FeatureSet.empty()));
+        SOUND = Registry.register(Registries.SCREEN_HANDLER,
+                Identifier.of(MineLightMod.MOD_ID, "sound"),
+                new ScreenHandlerType<>((syncId, inv) -> {
                     throw new UnsupportedOperationException("client-side factory via FabricScreenRegistry");
                 }, FeatureSet.empty()));
     }

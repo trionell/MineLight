@@ -36,7 +36,12 @@ public final class MineLightMod implements ModInitializer {
     private static ConsoleEngine engine;
     private static RedstoneBridge redstoneBridge;
     private static FixtureBlockBridge fixtureBlockBridge;
+    private static SoundBridge soundBridge;
     private static MdnsAdvertiser mdns;
+
+    public static SoundBridge soundBridge() {
+        return soundBridge;
+    }
 
     public static ConsoleEngine engine() {
         return engine;
@@ -88,6 +93,11 @@ public final class MineLightMod implements ModInitializer {
                 // fixture blocks: redstone in -> DMX out, console levels -> redstone out
                 fixtureBlockBridge = new FixtureBlockBridge(engine);
                 ServerTickEvents.END_SERVER_TICK.register(fixtureBlockBridge::tick);
+
+                // sound-to-light: note blocks + ambient level -> DMX
+                soundBridge = new SoundBridge(engine);
+                ServerTickEvents.END_SERVER_TICK.register(soundBridge::tick);
+                WorldSoundHooks.register(soundBridge);
 
                 LOGGER.info("[MineLight] Engine started. WebConsole: http://localhost:8090/");
             } catch (Exception e) {

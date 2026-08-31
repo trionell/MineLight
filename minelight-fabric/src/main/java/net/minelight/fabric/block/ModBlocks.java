@@ -23,11 +23,21 @@ public final class ModBlocks {
     public static Block EVENT;
     public static Block FEEDBACK;
 
+    public static Block NOTE;
+    public static Block SOUND_METER;
+    public static Block BEAT;
+    public static Block SPECTRUM;
+
     public static void register() {
         DIMMER = register("dimmer_block", new DimmerBlock(fixtureSettings()));
         RGB = register("rgb_block", new RgbBlock(fixtureSettings()));
         EVENT = register("event_block", new EventBlock(fixtureSettings()));
         FEEDBACK = register("feedback_block", new FeedbackBlock(fixtureSettings()));
+
+        NOTE = register("note_fixture_block", new NoteBlockFixture(fixtureSettings()));
+        SOUND_METER = register("sound_meter_block", new SoundMeterBlock(fixtureSettings()));
+        BEAT = register("beat_block", new BeatBlock(fixtureSettings()));
+        SPECTRUM = register("spectrum_block", new SpectrumBlock(fixtureSettings()));
     }
 
     private static AbstractBlock.Settings fixtureSettings() {

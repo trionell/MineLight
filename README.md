@@ -109,6 +109,19 @@ Right-click any fixture block to open its config screen: pick the redstone face,
 
 The coordinate-based patch from earlier versions still works if you want invisible integration — fixture blocks are just the friendly, physical front-end.
 
+### Sound-to-light blocks
+
+Four more blocks turn Minecraft's sounds into light:
+
+| Block | Listens to | What it does |
+|---|---|---|
+| **Note Fixture** | note blocks in radius | pitch → hue (RGB), instrument → accent. Play a melody, paint the room. |
+| **Sound Meter Fixture** | ambient world sound | loudness → dimmer, with a fast attack and smooth decay like a real VU meter. |
+| **Beat Fixture** | sudden onsets | each beat/kick/explosion fires a full-scale bump or event — classic strobe trigger. |
+| **Spectrum Fixture** | bass / mid / treble | 3-band energy → R/G/B. Bass drop goes red, hi-hat shimmer goes blue. |
+
+Right-click any of them to set detection radius, gain/sensitivity, channel map, and the beat threshold. Feed a Sound Meter from a mob farm, hook a Beat block to a note-block loop, or point a Spectrum block at a jukebox for a living-room visualizer.
+
 ---
 
 ## In-game commands
@@ -241,7 +254,7 @@ Requirements: JDK 21+. Gradle 9.x is used from your system `gradle`.
 - [x] In-world fixture blocks (Dimmer / RGB / Event / Feedback) + right-click config GUI
 - [ ] Moving-head fixtures with pan/tilt
 - [ ] Pixel mapping for beacon arrays
-- [ ] Sound-to-light via Minecraft's jukebox / note blocks
+- [x] Sound-to-light: Note / Sound Meter / Beat / Spectrum blocks
 - [ ] Multi-world profiles
 
 ---
