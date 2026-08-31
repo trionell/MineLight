@@ -48,6 +48,7 @@ public final class ConsoleEngine implements ConsoleEngineContext {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Patch patch = new Patch();
+    private final FixtureBlockRegistry blockRegistry;
     private final TriggerEngine triggers;
     private final List<ProtocolServer> servers = new CopyOnWriteArrayList<>();
     private final List<DmxListener> dmxListeners = new CopyOnWriteArrayList<>();
@@ -110,6 +111,7 @@ public final class ConsoleEngine implements ConsoleEngineContext {
 
     public ConsoleEngine(Path configDir) {
         this.configDir = Objects.requireNonNull(configDir);
+        this.blockRegistry = new FixtureBlockRegistry(this);
         this.triggers = new TriggerEngine(this);
         this.scheduler = Executors.newScheduledThreadPool(2, r -> {
             Thread t = new Thread(r, "minelight-engine");
@@ -253,6 +255,12 @@ public final class ConsoleEngine implements ConsoleEngineContext {
         return patch;
     }
 
+    // ---- fixture blocks (Minecraft-as-controller) -------------------------
+
+    public FixtureBlockRegistry blocks() {
+        return blockRegistry;
+    }
+
     // ---- presets -----------------------------------------------------------
 
     public void savePreset(String name, Map<Integer, int[]> levels) {
@@ -315,6 +323,7 @@ public final class ConsoleEngine implements ConsoleEngineContext {
             Files.createDirectories(configDir);
             JsonObject root = new JsonObject();
             root.add("patch", patch.toJson());
+            root.add("blocks", blockRegistry.toJson());
             root.addProperty("nextFixtureId", patch.fixtures().stream()
                     .mapToInt(Patch.Fixture::id).max().orElse(0) + 1);
 
@@ -365,6 +374,9 @@ public final class ConsoleEngine implements ConsoleEngineContext {
                     patch.addFixture(fx.name(), fx.mode(), fx.universe(), fx.address(),
                             fx.x(), fx.y(), fx.z(), fx.kind());
                 }
+            }
+            if (root.has("blocks")) {
+                blockRegistry.load(root.getAsJsonObject("blocks"));
             }
             if (root.has("presets")) {
                 JsonObject pj = root.getAsJsonObject("presets");
