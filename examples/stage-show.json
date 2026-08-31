@@ -1,0 +1,21 @@
+{
+  "patch": {
+    "nextId": 5,
+    "fixtures": [
+      {"id": 1, "name": "Stage Left", "mode": "RGB+Dimmer", "universe": 1, "address": 1, "x": 100, "y": 64, "z": 100, "kind": "lamp", "redstone": true},
+      {"id": 2, "name": "Stage Right", "mode": "RGB+Dimmer", "universe": 1, "address": 5, "x": 104, "y": 64, "z": 100, "kind": "lamp", "redstone": true},
+      {"id": 3, "name": "Backdrop", "mode": "Strobe", "universe": 1, "address": 9, "x": 102, "y": 70, "z": 110, "kind": "strobe", "redstone": false},
+      {"id": 4, "name": "House", "mode": "Dimmer", "universe": 1, "address": 11, "x": 90, "y": 64, "z": 90, "kind": "house", "redstone": true}
+    ]
+  },
+  "presets": {
+    "blackout": {"1": [0], "2": [0], "3": [0], "4": [0]},
+    "full":     {"1": [255,255,255,255], "2": [255,255,255,255], "3": [255], "4": [255]},
+    "night":    {"1": [40,0,0,255], "2": [40,0,0,255], "3": [0], "4": [60]},
+    "day":      {"1": [0], "2": [0], "3": [0], "4": [0]},
+    "strobe":   {"1": [255], "2": [255], "3": [255,200], "4": [0]}
+  },
+  "triggers": {
+    "script": "-- Stage show example\nminelight.on('time.night', function(e) minelight.preset('night') end)\nminelight.on('time.day', function(e) minelight.preset('day') end)\nminelight.on('custom.showtime', function(e) minelight.cue('main') end)\nminelight.on('redstone.on', function(e) minelight.intensity(e.fixtureId, 255) end)\nminelight.on('redstone.off', function(e) minelight.intensity(e.fixtureId, 0) end)\n"
+  }
+}
