@@ -1,41 +1,42 @@
 package net.minelight.fabric.screen;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandler;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import net.minelight.fabric.blockentity.SoundBlockEntity;
 
 /**
- * Server side of the sound fixture configuration screen.
+ * Sound fixture configuration menu. Built from a {@link SoundMenuData}
+ * snapshot on both sides; edits travel back as {@code SoundConfigPayload}.
  */
-public class SoundScreenHandler extends ScreenHandler {
+public class SoundScreenHandler extends AbstractContainerMenu {
 
-    private final SoundBlockEntity blockEntity;
+    private final SoundMenuData data;
 
-    public SoundScreenHandler(int syncId, PlayerInventory playerInventory, SoundBlockEntity blockEntity) {
+    public SoundScreenHandler(int syncId, Inventory playerInventory, SoundMenuData data) {
         super(ModScreenHandlers.SOUND, syncId);
-        this.blockEntity = blockEntity;
+        this.data = data;
     }
 
-    public SoundBlockEntity blockEntity() {
-        return blockEntity;
+    public SoundMenuData data() {
+        return data;
     }
 
-    public void applyConfig(int radius, int universe, int channel,
-                            double gain, double decay, double beatThreshold) {
-        blockEntity.applyConfig(radius, universe, channel, gain, decay, beatThreshold);
+    public BlockPos pos() {
+        return data.pos();
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slot) {
+    public ItemStack quickMoveStack(Player player, int slot) {
         return ItemStack.EMPTY;
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
-        return blockEntity.getWorld() != null
-                && blockEntity.getWorld().getBlockEntity(blockEntity.getPos()) == blockEntity
-                && player.squaredDistanceTo(blockEntity.getPos().toCenterPos()) < 64.0;
+    public boolean stillValid(Player player) {
+        return player.level().getBlockEntity(data.pos()) instanceof SoundBlockEntity
+                && player.distanceToSqr(Vec3.atCenterOf(data.pos())) < 64.0;
     }
 }

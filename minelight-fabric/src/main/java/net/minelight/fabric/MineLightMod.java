@@ -13,6 +13,7 @@ import net.minelight.core.sacn.SacnServer;
 import net.minelight.core.webconsole.WebConsoleServer;
 import net.minelight.fabric.block.ModBlocks;
 import net.minelight.fabric.blockentity.ModBlockEntities;
+import net.minelight.fabric.network.ModNetworking;
 import net.minelight.fabric.screen.ModScreenHandlers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,13 +56,15 @@ public final class MineLightMod implements ModInitializer {
         ModBlocks.register();
         ModBlockEntities.register();
         ModScreenHandlers.register();
+        ModNetworking.registerPayloads();
+        ModNetworking.registerServerReceivers();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 MLCommand.register(dispatcher));
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
-                Path configDir = server.getRunDirectory().toPath().resolve("config").resolve("minelight");
+                Path configDir = server.getServerDirectory().resolve("config").resolve("minelight");
                 engine = new ConsoleEngine(configDir);
 
                 // Protocol servers — all optional, all console-agnostic

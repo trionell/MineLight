@@ -2,11 +2,13 @@ package net.minelight.fabric;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minelight.fabric.screen.FixtureScreen;
+import net.minelight.fabric.screen.SoundScreen;
 import net.minelight.fabric.screen.ModScreenHandlers;
 import org.lwjgl.glfw.GLFW;
 
@@ -17,20 +19,24 @@ import org.lwjgl.glfw.GLFW;
  */
 public final class MineLightClient implements ClientModInitializer {
 
-    private static KeyBinding openConsole;
+    private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
+            Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "main"));
+
+    private static KeyMapping openConsole;
 
     @Override
     public void onInitializeClient() {
-        HandledScreens.register(ModScreenHandlers.FIXTURE, FixtureScreen::new);
+        MenuScreens.register(ModScreenHandlers.FIXTURE, FixtureScreen::new);
+        MenuScreens.register(ModScreenHandlers.SOUND, SoundScreen::new);
 
-        openConsole = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        openConsole = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.minelight.console",
-                InputUtil.Type.KEYSYM,
+                InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_K,
-                "category.minelight"));
+                CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (openConsole.wasPressed()) {
+            while (openConsole.consumeClick()) {
                 // Open the WebConsole in the system browser
                 String url = "http://localhost:8090/";
                 try {

@@ -1,15 +1,17 @@
 package net.minelight.fabric.blockentity;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
+import net.minecraft.server.level.ServerPlayer;
+import net.minelight.fabric.screen.SoundMenuData;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.network.chat.Component;
+import net.minecraft.core.BlockPos;
 import net.minelight.core.sound.SoundEngine;
 import net.minelight.fabric.MineLightMod;
 import net.minelight.fabric.screen.SoundScreenHandler;
@@ -19,7 +21,7 @@ import org.jetbrains.annotations.Nullable;
  * Persists a sound fixture block's config (radius, gain, channel, thresholds)
  * and registers it with the engine's {@code SoundEngine}.
  */
-public class SoundBlockEntity extends BlockEntity implements NamedScreenHandlerFactory {
+public class SoundBlockEntity extends BlockEntity implements ExtendedMenuProvider<SoundMenuData> {
 
     private final SoundEngine.Mode mode;
     private int engineId = -1;
@@ -46,7 +48,7 @@ public class SoundBlockEntity extends BlockEntity implements NamedScreenHandlerF
     }
 
     public void tick() {
-        if (world == null || world.isClient()) {
+        if (level == null || level.isClientSide()) {
             return;
         }
         if (engineId < 0) {
@@ -61,12 +63,12 @@ public class SoundBlockEntity extends BlockEntity implements NamedScreenHandlerF
         }
         // reuse an existing engine block at this position if present
         for (var b : engine.sound().all()) {
-            if (b.x == pos.getX() && b.y == pos.getY() && b.z == pos.getZ()) {
+            if (b.x == worldPosition.getX() && b.y == worldPosition.getY() && b.z == worldPosition.getZ()) {
                 engineId = b.id;
                 return;
             }
         }
-        var b = engine.sound().add(mode, defaultName(), pos.getX(), pos.getY(), pos.getZ());
+        var b = engine.sound().add(mode, defaultName(), worldPosition.getX(), worldPosition.getY(), worldPosition.getZ());
         engineId = b.id;
         applyTo(b);
         engine.save();
@@ -87,7 +89,7 @@ public class SoundBlockEntity extends BlockEntity implements NamedScreenHandlerF
             case LEVEL -> "Meter";
             case BEAT -> "Beat";
             case SPECTRUM -> "Spectrum";
-        } + " " + pos.getX() + "," + pos.getY() + "," + pos.getZ();
+        } + " " + worldPosition.getX() + "," + worldPosition.getY() + "," + worldPosition.getZ();
     }
 
     public void unregister() {
@@ -116,41 +118,57 @@ public class SoundBlockEntity extends BlockEntity implements NamedScreenHandlerF
                 engine.save();
             }
         }
-        markDirty();
+        setChanged();
     }
 
     @Override
-    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.writeNbt(nbt, registryLookup);
-        nbt.putInt("engineId", engineId);
-        nbt.putInt("radius", radius);
-        nbt.putInt("universe", universe);
-        nbt.putInt("channel", channel);
-        nbt.putDouble("gain", gain);
-        nbt.putDouble("decay", decay);
-        nbt.putDouble("beatThreshold", beatThreshold);
+    protected void saveAdditional(ValueOutput view) {
+        super.saveAdditional(view);
+        view.putInt("engineId", engineId);
+        view.putInt("radius", radius);
+        view.putInt("universe", universe);
+        view.putInt("channel", channel);
+        view.putDouble("gain", gain);
+        view.putDouble("decay", decay);
+        view.putDouble("beatThreshold", beatThreshold);
+    }
+
+    // Defaults fall back to the field initializers, so a block saved before a
+    // field existed keeps that field's default rather than zeroing it.
+    @Override
+    protected void loadAdditional(ValueInput view) {
+        super.loadAdditional(view);
+        engineId = view.getIntOr("engineId", engineId);
+        radius = view.getIntOr("radius", radius);
+        universe = view.getIntOr("universe", universe);
+        channel = view.getIntOr("channel", channel);
+        gain = view.getDoubleOr("gain", gain);
+        decay = view.getDoubleOr("decay", decay);
+        beatThreshold = view.getDoubleOr("beatThreshold", beatThreshold);
     }
 
     @Override
-    protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.readNbt(nbt, registryLookup);
-        engineId = nbt.getInt("engineId");
-        radius = nbt.getInt("radius");
-        universe = nbt.getInt("universe");
-        channel = nbt.getInt("channel");
-        gain = nbt.getDouble("gain");
-        decay = nbt.getDouble("decay");
-        beatThreshold = nbt.getDouble("beatThreshold");
-    }
-
-    @Override
-    public Text getDisplayName() {
-        return Text.literal(defaultName());
+    public Component getDisplayName() {
+        return Component.literal(defaultName());
     }
 
     @Nullable
     @Override
-    public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-        return new SoundScreenHandler(syncId, inv, this);
+    public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
+        return new SoundScreenHandler(syncId, inv, getScreenOpeningData(null));
     }
+
+    @Override
+    public SoundMenuData getScreenOpeningData(ServerPlayer player) {
+        return new SoundMenuData(worldPosition, radius, universe, channel, gain, decay, beatThreshold);
+    }
+
+    // Called before the chunk drops this block entity, which is the last point
+    // at which the engine registration can still be cleaned up.
+    @Override
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        unregister();
+        super.preRemoveSideEffects(pos, state);
+    }
+
 }
