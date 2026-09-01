@@ -261,4 +261,4 @@ Requirements: JDK 21+. Gradle 9.x is used from your system `gradle`.
 
 ## License
 
-GPL-3.0-only. See `/home/runner/work/MineLight/MineLight/LICENSE`.
+GPL-3.0-only. See `LICENSE`.
