@@ -48,6 +48,7 @@ public final class ConsoleEngine implements ConsoleEngineContext {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Patch patch = new Patch();
+    private final EventLog eventLog = new EventLog();
     private final FixtureBlockRegistry blockRegistry;
     private final net.minelight.core.sound.SoundEngine soundEngine;
     private final TriggerEngine triggers;
@@ -180,6 +181,7 @@ public final class ConsoleEngine implements ConsoleEngineContext {
 
     @Override
     public void emit(GameEvent event) {
+        eventLog.add(event);
         for (GameEventListener l : eventListeners) {
             try {
                 l.onEvent(event);
@@ -191,6 +193,11 @@ public final class ConsoleEngine implements ConsoleEngineContext {
 
     public void addEventListener(GameEventListener l) {
         eventListeners.add(l);
+    }
+
+    /** The recent-event ring, for monitors that want signal history. */
+    public EventLog eventLog() {
+        return eventLog;
     }
 
     // ---- DMX ---------------------------------------------------------------
