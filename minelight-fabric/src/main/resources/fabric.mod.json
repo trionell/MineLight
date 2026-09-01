@@ -9,7 +9,7 @@
     "homepage": "https://github.com/trionell/MineLight",
     "sources": "https://github.com/trionell/MineLight"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "icon": "assets/minelight/icon.png",
   "environment": "*",
   "entrypoints": {
