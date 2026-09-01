@@ -12,7 +12,7 @@ import net.minelight.core.api.FixtureBlock;
  */
 public final class RgbBlock extends FixtureBlockBase {
 
-    public RgbBlock(Settings settings) {
+    public RgbBlock(Properties settings) {
         super(settings, FixtureBlock.Type.RGB);
     }
 }

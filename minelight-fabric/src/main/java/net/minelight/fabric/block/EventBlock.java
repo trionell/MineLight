@@ -12,7 +12,7 @@ import net.minelight.core.api.FixtureBlock;
  */
 public final class EventBlock extends FixtureBlockBase {
 
-    public EventBlock(Settings settings) {
+    public EventBlock(Properties settings) {
         super(settings, FixtureBlock.Type.EVENT);
     }
 }

@@ -1,9 +1,10 @@
 package net.minelight.fabric.blockentity;
 
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.util.Identifier;
+import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 import net.minelight.core.api.FixtureBlock;
 import net.minelight.fabric.MineLightMod;
 import net.minelight.fabric.block.ModBlocks;
@@ -27,48 +28,48 @@ public final class ModBlockEntities {
     public static BlockEntityType<SoundBlockEntity> SPECTRUM;
 
     public static void register() {
-        DIMMER = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "dimmer"),
-                BlockEntityType.Builder.create(
+        DIMMER = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "dimmer"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new FixtureBlockEntity(pos, state, FixtureBlock.Type.DIMMER),
                         ModBlocks.DIMMER).build());
-        RGB = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "rgb"),
-                BlockEntityType.Builder.create(
+        RGB = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "rgb"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new FixtureBlockEntity(pos, state, FixtureBlock.Type.RGB),
                         ModBlocks.RGB).build());
-        EVENT = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "event"),
-                BlockEntityType.Builder.create(
+        EVENT = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "event"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new FixtureBlockEntity(pos, state, FixtureBlock.Type.EVENT),
                         ModBlocks.EVENT).build());
-        FEEDBACK = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "feedback"),
-                BlockEntityType.Builder.create(
+        FEEDBACK = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "feedback"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new FixtureBlockEntity(pos, state, FixtureBlock.Type.FEEDBACK),
                         ModBlocks.FEEDBACK).build());
 
-        NOTE = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "note_fixture"),
-                BlockEntityType.Builder.create(
+        NOTE = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "note_fixture"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new SoundBlockEntity(pos, state,
                                 net.minelight.core.sound.SoundEngine.Mode.NOTE),
                         ModBlocks.NOTE).build());
-        SOUND_METER = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "sound_meter"),
-                BlockEntityType.Builder.create(
+        SOUND_METER = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "sound_meter"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new SoundBlockEntity(pos, state,
                                 net.minelight.core.sound.SoundEngine.Mode.LEVEL),
                         ModBlocks.SOUND_METER).build());
-        BEAT = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "beat"),
-                BlockEntityType.Builder.create(
+        BEAT = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "beat"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new SoundBlockEntity(pos, state,
                                 net.minelight.core.sound.SoundEngine.Mode.BEAT),
                         ModBlocks.BEAT).build());
-        SPECTRUM = Registry.register(Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(MineLightMod.MOD_ID, "spectrum"),
-                BlockEntityType.Builder.create(
+        SPECTRUM = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, "spectrum"),
+                FabricBlockEntityTypeBuilder.create(
                         (pos, state) -> new SoundBlockEntity(pos, state,
                                 net.minelight.core.sound.SoundEngine.Mode.SPECTRUM),
                         ModBlocks.SPECTRUM).build());

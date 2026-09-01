@@ -1,8 +1,8 @@
 package net.minelight.fabric;
 
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
 import net.minelight.core.engine.ConsoleEngine;
 
 import java.util.Map;
@@ -24,13 +24,13 @@ public final class RedstoneBridge {
     }
 
     public void tick(MinecraftServer server) {
-        ServerWorld world = server.getOverworld();
+        ServerLevel world = server.overworld();
         for (var f : engine.patch().fixtures()) {
             if (!f.redstone()) {
                 continue;
             }
             BlockPos pos = new BlockPos(f.x(), f.y(), f.z());
-            boolean powered = world.isReceivingRedstonePower(pos);
+            boolean powered = world.hasNeighborSignal(pos);
             Boolean prev = lastState.get(f.id());
             if (prev == null || prev != powered) {
                 lastState.put(f.id(), powered);

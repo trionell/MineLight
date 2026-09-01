@@ -1,7 +1,7 @@
 package net.minelight.fabric.block;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.BlockPos;
 import net.minelight.fabric.blockentity.SoundBlockEntity;
 
 /**
@@ -11,12 +11,12 @@ import net.minelight.fabric.blockentity.SoundBlockEntity;
  */
 public final class SpectrumBlock extends SoundFixtureBlockBase {
 
-    public SpectrumBlock(Settings settings) {
+    public SpectrumBlock(Properties settings) {
         super(settings, net.minelight.core.sound.SoundEngine.Mode.SPECTRUM);
     }
 
     @Override
-    public SoundBlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public SoundBlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new SoundBlockEntity(pos, state,
                 net.minelight.core.sound.SoundEngine.Mode.SPECTRUM);
     }

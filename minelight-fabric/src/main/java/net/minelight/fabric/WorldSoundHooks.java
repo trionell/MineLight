@@ -1,12 +1,12 @@
 package net.minelight.fabric;
 
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
-import net.minecraft.block.Blocks;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.ActionResult;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.InteractionResult;
 
 /**
- * World-event hooks that feed the {@link SoundBridge}.
+ * Level-event hooks that feed the {@link SoundBridge}.
  *
  * <p>Note blocks are the precise, melodic input: when a player (or redstone)
  * plays a note block we forward pitch + instrument. Explosions, pistons and
@@ -21,18 +21,18 @@ public final class WorldSoundHooks {
     public static void register(SoundBridge bridge) {
         // Player punches a note block -> it plays a note.
         AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
-            if (world.isClient()) {
-                return ActionResult.PASS;
+            if (world.isClientSide()) {
+                return InteractionResult.PASS;
             }
             var state = world.getBlockState(pos);
-            if (state.isOf(Blocks.NOTE_BLOCK)) {
-                int note = state.contains(Properties.NOTE) ? state.get(Properties.NOTE) : 0;
-                String instrument = state.contains(Properties.INSTRUMENT)
-                        ? state.get(Properties.INSTRUMENT).name().toLowerCase()
+            if (state.getBlock() == Blocks.NOTE_BLOCK) {
+                int note = state.getValueOrElse(BlockStateProperties.NOTE, 0);
+                String instrument = state.hasProperty(BlockStateProperties.NOTEBLOCK_INSTRUMENT)
+                        ? state.getValue(BlockStateProperties.NOTEBLOCK_INSTRUMENT).name().toLowerCase()
                         : "harp";
                 bridge.onNoteBlockPlayed(pos.getX(), pos.getY(), pos.getZ(), note, instrument);
             }
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
 
         // Loud world events bump the ambient level. We hook a few common ones
@@ -40,7 +40,7 @@ public final class WorldSoundHooks {
         // for explosion and piston callbacks.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             // a primed TNT / creeper about to blow is loud
-            if (entity instanceof net.minecraft.entity.TntEntity) {
+            if (entity instanceof net.minecraft.world.entity.item.PrimedTnt) {
                 bridge.bump(0.5);
             }
         });

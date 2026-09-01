@@ -11,7 +11,7 @@ import net.minelight.core.api.FixtureBlock;
  */
 public final class DimmerBlock extends FixtureBlockBase {
 
-    public DimmerBlock(Settings settings) {
+    public DimmerBlock(Properties settings) {
         super(settings, FixtureBlock.Type.DIMMER);
     }
 }
