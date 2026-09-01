@@ -28,6 +28,10 @@ public class SoundScreen extends AbstractContainerScreen<SoundScreenHandler> {
     private static final int LABEL_BASELINE = 6;
     /** Label colour needs a full alpha byte: a zero alpha draws nothing at all. */
     private static final int LABEL_ARGB = 0xFF5FD0FF;
+    private static final int TITLE_ARGB = 0xFFE8E8E8;
+    private static final int LABEL_X = 8;
+    private static final int FIELD_X = 88;
+    private static final int FIELD_W = 72;
 
     private final EditBox[] fields = new EditBox[LABELS.length];
 
@@ -45,7 +49,7 @@ public class SoundScreen extends AbstractContainerScreen<SoundScreenHandler> {
         };
         int y = this.topPos + FIRST_ROW_Y;
         for (int i = 0; i < LABELS.length; i++) {
-            EditBox box = new EditBox(font, this.leftPos + 88, y, 72, 20, Component.literal(LABELS[i]));
+            EditBox box = new EditBox(font, this.leftPos + FIELD_X, y, FIELD_W, 20, Component.literal(LABELS[i]));
             box.setValue(values[i]);
             box.setResponder(s -> send());
             addRenderableWidget(box);
@@ -100,12 +104,14 @@ public class SoundScreen extends AbstractContainerScreen<SoundScreenHandler> {
         super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
+    // Deliberately not super.extractLabels(): there is no inventory grid on
+    // this screen, so vanilla's "Inventory" label would only mislead.
     @Override
     protected void extractLabels(GuiGraphicsExtractor context, int mouseX, int mouseY) {
-        super.extractLabels(context, mouseX, mouseY);
+        context.text(font, title, titleLabelX, titleLabelY, TITLE_ARGB, false);
         int y = FIRST_ROW_Y + LABEL_BASELINE;
         for (String label : LABELS) {
-            context.text(font, label, 8, y, LABEL_ARGB, false);
+            context.text(font, label, LABEL_X, y, LABEL_ARGB, false);
             y += ROW_H;
         }
     }

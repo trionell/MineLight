@@ -12,32 +12,31 @@ import net.minelight.core.api.FixtureBlock;
 import net.minelight.fabric.network.PortUpdatePayload;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Right-click configuration screen for fixture blocks.
  *
- * <p>Shows one row per port: its name, which redstone face it reads, and the
- * target — a DMX universe.channel for dimmer/RGB/feedback blocks, or an event
- * name for event blocks. Edits are sent to the server as they are made.</p>
+ * <p>One control per row, label on the left and widget on the right: the
+ * redstone face a port reads, and its target — a DMX universe and channel for
+ * dimmer/RGB/feedback blocks, or an event name for event blocks. Edits are
+ * sent to the server as they are made.</p>
  */
 public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler> {
 
-    // Row geometry, relative to the panel's left content edge. The panel is
-    // DEFAULT_IMAGE_WIDTH wide with an 8px margin, so nothing may pass x + 160.
-    private static final int SIDE_W = 60;
-    private static final int FIELD_X = 64;
-    private static final int UNIVERSE_W = 44;
-    private static final int CHANNEL_X = 112;
-    private static final int CHANNEL_W = 48;
-    private static final int EVENT_W = 96;
     private static final int ROW_H = 24;
     private static final int FIRST_ROW_Y = 24;
+    private static final int LABEL_X = 8;
+    private static final int FIELD_X = 88;
+    private static final int FIELD_W = 72;
     /** Nudges an 8px glyph down into the middle of a 20px field. */
     private static final int LABEL_BASELINE = 6;
     /** Label colour needs a full alpha byte: a zero alpha draws nothing at all. */
     private static final int LABEL_ARGB = 0xFF5FD0FF;
+    private static final int TITLE_ARGB = 0xFFE8E8E8;
 
     /**
      * Live working copy per port. Every widget edits the current mapping rather
@@ -46,56 +45,74 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
      */
     private final Map<String, FixtureBlock.PortMapping> working = new LinkedHashMap<>();
 
+    /** One label per control row, in layout order. */
+    private final List<String> rowLabels = new ArrayList<>();
+
     public FixtureScreen(FixtureScreenHandler handler, Inventory inventory, Component title) {
-        super(handler, inventory, title, DEFAULT_IMAGE_WIDTH, 40 + handler.ports().size() * ROW_H);
+        super(handler, inventory, title, DEFAULT_IMAGE_WIDTH, 40 + rowCount(handler.ports()) * ROW_H);
+    }
+
+    /** A channel port needs side/universe/channel; an event port side/event. */
+    private static int rowCount(List<FixtureBlock.PortMapping> ports) {
+        int rows = 0;
+        for (FixtureBlock.PortMapping port : ports) {
+            rows += port.action() == FixtureBlock.Action.SET_CHANNEL ? 3 : 2;
+        }
+        return rows;
     }
 
     @Override
     protected void init() {
         super.init();
         working.clear();
+        rowLabels.clear();
         for (FixtureBlock.PortMapping port : menu.ports()) {
             working.put(port.name(), port);
         }
+
+        // A single-port block has nothing to disambiguate, so drop the prefix.
+        boolean prefixed = menu.ports().size() > 1;
         int y = this.topPos + FIRST_ROW_Y;
         for (FixtureBlock.PortMapping port : menu.ports()) {
-            addPortRow(port.name(), y);
+            String name = port.name();
+            String prefix = prefixed ? name + " " : "";
+
+            rowLabels.add(prefix + "side");
+            addRenderableWidget(Button.builder(Component.literal(port.side().name()), b -> {
+                FixtureBlock.PortMapping current = working.get(name);
+                FixtureBlock.Side next = nextSide(current.side());
+                b.setMessage(Component.literal(next.name()));
+                push(new FixtureBlock.PortMapping(name, next, current.action(),
+                        current.universe(), current.channel(), current.event()));
+            }).bounds(this.leftPos + FIELD_X, y, FIELD_W, 20).build());
             y += ROW_H;
+
+            if (port.action() == FixtureBlock.Action.SET_CHANNEL) {
+                rowLabels.add(prefix + "universe");
+                addRenderableWidget(field(y, String.valueOf(port.universe()), "universe",
+                        s -> updateChannel(name, s, null)));
+                y += ROW_H;
+
+                rowLabels.add(prefix + "channel");
+                addRenderableWidget(field(y, String.valueOf(port.channel()), "channel",
+                        s -> updateChannel(name, null, s)));
+                y += ROW_H;
+            } else {
+                rowLabels.add(prefix + "event");
+                addRenderableWidget(field(y, port.event() == null ? "" : port.event(), "event", s -> {
+                    FixtureBlock.PortMapping current = working.get(name);
+                    push(FixtureBlock.PortMapping.event(name, current.side(), s));
+                }));
+                y += ROW_H;
+            }
         }
     }
 
-    private void addPortRow(String name, int y) {
-        int x = this.leftPos + 8;
-        FixtureBlock.PortMapping port = working.get(name);
-
-        Button sideBtn = Button.builder(Component.literal(port.side().name()), b -> {
-            FixtureBlock.PortMapping current = working.get(name);
-            FixtureBlock.Side next = nextSide(current.side());
-            b.setMessage(Component.literal(next.name()));
-            push(new FixtureBlock.PortMapping(name, next, current.action(),
-                    current.universe(), current.channel(), current.event()));
-        }).bounds(x, y, SIDE_W, 20).build();
-        addRenderableWidget(sideBtn);
-
-        if (port.action() == FixtureBlock.Action.SET_CHANNEL) {
-            EditBox uni = new EditBox(font, x + FIELD_X, y, UNIVERSE_W, 20, Component.literal("universe"));
-            uni.setValue(String.valueOf(port.universe()));
-            uni.setResponder(s -> updateChannel(name, s, null));
-            addRenderableWidget(uni);
-
-            EditBox ch = new EditBox(font, x + CHANNEL_X, y, CHANNEL_W, 20, Component.literal("channel"));
-            ch.setValue(String.valueOf(port.channel()));
-            ch.setResponder(s -> updateChannel(name, null, s));
-            addRenderableWidget(ch);
-        } else {
-            EditBox ev = new EditBox(font, x + FIELD_X, y, EVENT_W, 20, Component.literal("event"));
-            ev.setValue(port.event() == null ? "" : port.event());
-            ev.setResponder(s -> {
-                FixtureBlock.PortMapping current = working.get(name);
-                push(FixtureBlock.PortMapping.event(name, current.side(), s));
-            });
-            addRenderableWidget(ev);
-        }
+    private EditBox field(int y, String value, String hint, java.util.function.Consumer<String> onChange) {
+        EditBox box = new EditBox(font, this.leftPos + FIELD_X, y, FIELD_W, 20, Component.literal(hint));
+        box.setValue(value);
+        box.setResponder(onChange);
+        return box;
     }
 
     /** A half-typed number leaves the corresponding value untouched. */
@@ -147,12 +164,14 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
         super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
+    // Deliberately not super.extractLabels(): there is no inventory grid on
+    // this screen, so vanilla's "Inventory" label would only mislead.
     @Override
     protected void extractLabels(GuiGraphicsExtractor context, int mouseX, int mouseY) {
-        super.extractLabels(context, mouseX, mouseY);
+        context.text(font, title, titleLabelX, titleLabelY, TITLE_ARGB, false);
         int y = FIRST_ROW_Y + LABEL_BASELINE;
-        for (FixtureBlock.PortMapping port : menu.ports()) {
-            context.text(font, port.name(), 8, y, LABEL_ARGB, false);
+        for (String label : rowLabels) {
+            context.text(font, label, LABEL_X, y, LABEL_ARGB, false);
             y += ROW_H;
         }
     }
