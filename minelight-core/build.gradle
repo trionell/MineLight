@@ -1,0 +1,44 @@
+// MineLight core: console-agnostic lighting engine.
+// Plain Java 21, no Minecraft dependencies — testable and reusable.
+plugins {
+    id 'java-library'
+    id 'application'
+}
+
+application {
+    // Headless lighting engine: gradle :minelight-core:run
+    mainClass = 'net.minelight.core.MineLightServer'
+}
+
+group = 'net.minelight'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // JSON (config, web API, MQTT payloads)
+    implementation 'com.google.code.gson:gson:2.11.0'
+    // Lua scripting for the trigger engine
+    implementation 'org.luaj:luaj-jse:3.0.1'
+    // MQTT (optional; gracefully absent at runtime)
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
+
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+    }
+}

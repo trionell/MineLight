@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MineLight Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121824;
+    --panel-2: #0e141d;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #f7782f; /* lava orange */
+    --accent-2: #5fd0ff;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --border: #1f2a38;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header {
+    display:flex; align-items:center; gap:12px; padding:10px 16px;
+    background:linear-gradient(90deg,#1a1206,#0b0f14 60%);
+    border-bottom:1px solid var(--border);
+  }
+  header h1 { font-size:16px; margin:0; letter-spacing:1px; }
+  header .dot { width:10px; height:10px; border-radius:50%; background:var(--bad); }
+  header .dot.on { background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  main { display:grid; grid-template-columns: 1fr 380px; gap:12px; padding:12px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
+  .panel h2 { margin:0 0 10px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:8px; }
+  .chan { background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:8px; position:relative; }
+  .chan .name { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chan .val { font-size:18px; margin:4px 0; color:var(--accent-2); }
+  .chan .bar { height:60px; background:#000; border-radius:4px; position:relative; overflow:hidden; }
+  .chan .bar i { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(180deg,var(--accent),#7a2d00); }
+  .chan .rs { position:absolute; top:6px; right:6px; width:10px; height:10px; border-radius:2px; background:#333; }
+  .chan .rs.on { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .row { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  button, input, select, textarea {
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:6px 10px; font:inherit; font-size:13px;
+  }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.go { background:var(--accent); color:#000; font-weight:bold; border:none; padding:10px 22px; font-size:16px; }
+  button.go:hover { filter:brightness(1.1); }
+  textarea { width:100%; height:260px; resize:vertical; }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; }
+  .tabs button.active { border-color:var(--accent); color:var(--accent); }
+  #presets button { min-width:80px; }
+  .log { height:140px; overflow:auto; background:#000; border-radius:6px; padding:8px; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="dot"></div>
+  <h1>MINELIGHT CONSOLE</h1>
+  <span id="status" style="color:var(--muted);font-size:12px"></span>
+</header>
+<main>
+  <section class="panel">
+    <h2>Fixtures</h2>
+    <div id="grid"></div>
+  </section>
+  <aside>
+    <div class="panel">
+      <h2>Presets</h2>
+      <div id="presets" class="row"></div>
+      <div class="row">
+        <input id="presetName" placeholder="new preset name">
+        <button onclick="savePreset()">Save current</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Cue List</h2>
+      <div class="row">
+        <button class="go" onclick="cueGo()">GO</button>
+        <input id="cueIndex" type="number" min="0" value="0" style="width:70px">
+        <button onclick="cueGoIndex()">Go to</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Trigger Script (Lua)</h2>
+      <div class="tabs">
+        <button class="active">editor</button>
+        <button onclick="reloadScript()">Apply</button>
+      </div>
+      <textarea id="script"></textarea>
+    </div>
+    <div class="panel">
+      <h2>Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</main>
+<script>
+let ws, state = {patch:{fixtures:[]}, dmx:{}, redstone:{}, presets:[]};
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws');
+  ws.onopen = () => { setConn(true); log('connected'); };
+  ws.onclose = () => { setConn(false); log('disconnected, retrying…'); setTimeout(connect, 1000); };
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'state') { state = msg; render(); }
+    if (msg.type === 'dmx') { state.dmx = msg.dmx; renderLevels(); }
+  };
+}
+
+function setConn(on) {
+  document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+  document.getElementById('status').textContent = on ? 'live' : 'offline';
+}
+
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+function render() {
+  renderFixtures();
+  renderPresets();
+  document.getElementById('script').value = state.script || '';
+}
+
+function renderFixtures() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (const f of state.patch.fixtures) {
+    const div = document.createElement('div');
+    div.className = 'chan';
+    div.innerHTML = `
+      <div class="rs" data-rs="${f.id}"></div>
+      <div class="name">#${f.id} ${esc(f.name)}</div>
+      <div class="val" data-val="${f.id}">0</div>
+      <div class="bar"><i data-bar="${f.id}" style="height:0%"></i></div>
+      <input type="range" min="0" max="255" value="0" style="width:100%"
+        data-slider="${f.id}"
+        oninput="onSlider(${f.id}, this.value)">
+      <div style="font-size:10px;color:var(--muted)">u${f.universe}.${f.address} ${esc(f.kind)}</div>`;
+    grid.appendChild(div);
+  }
+  renderLevels();
+}
+
+function renderLevels() {
+  for (const f of state.patch.fixtures) {
+    const uni = state.dmx[String(f.universe)];
+    const v = uni ? (uni[f.address - 1] || 0) : 0;
+    const val = document.querySelector(`[data-val="${f.id}"]`);
+    const bar = document.querySelector(`[data-bar="${f.id}"]`);
+    const slider = document.querySelector(`[data-slider="${f.id}"]`);
+    if (val) val.textContent = v;
+    if (bar) bar.style.height = (v / 255 * 100) + '%';
+    if (slider && document.activeElement !== slider) slider.value = v;
+    const rs = document.querySelector(`[data-rs="${f.id}"]`);
+    if (rs) rs.className = 'rs' + (state.redstone[String(f.id)] ? ' on' : '');
+  }
+}
+
+function renderPresets() {
+  const div = document.getElementById('presets');
+  div.innerHTML = '';
+  for (const p of state.presets) {
+    const b = document.createElement('button');
+    b.textContent = p;
+    b.onclick = () => send({type:'preset', name:p});
+    div.appendChild(b);
+  }
+}
+
+function onSlider(id, v) { send({type:'intensity', fixtureId:id, value:+v}); }
+function savePreset() {
+  const name = document.getElementById('presetName').value.trim();
+  if (!name) return;
+  const levels = {};
+  for (const f of state.patch.fixtures) {
+    const uni = state.dmx[String(f.universe)];
+    levels[f.id] = [ uni ? (uni[f.address - 1] || 0) : 0 ];
+  }
+  send({type:'savePreset', name, levels});
+}
+function cueGo() { send({type:'cue', list:'main'}); }
+function cueGoIndex() { send({type:'cue', list:'main', index:+document.getElementById('cueIndex').value}); }
+function reloadScript() { send({type:'script', script:document.getElementById('script').value}); log('script applied'); }
+
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function log(m){ const l=document.getElementById('log'); l.innerHTML += '<div>'+esc(m)+'</div>'; l.scrollTop=l.scrollHeight; }
+
+connect();
+</script>
+</body>
+</html>

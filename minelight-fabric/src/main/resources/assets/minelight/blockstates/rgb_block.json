@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "minelight:block/rgb_block" }
+  }
+}
