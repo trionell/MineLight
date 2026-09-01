@@ -1,14 +1,18 @@
 package net.minelight.fabric.block;
 
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minelight.fabric.MineLightMod;
+
+import java.util.function.Function;
 
 /**
  * The four MineLight fixture blocks.
@@ -29,27 +33,36 @@ public final class ModBlocks {
     public static Block SPECTRUM;
 
     public static void register() {
-        DIMMER = register("dimmer_block", new DimmerBlock(fixtureSettings()));
-        RGB = register("rgb_block", new RgbBlock(fixtureSettings()));
-        EVENT = register("event_block", new EventBlock(fixtureSettings()));
-        FEEDBACK = register("feedback_block", new FeedbackBlock(fixtureSettings()));
+        DIMMER = register("dimmer_block", DimmerBlock::new);
+        RGB = register("rgb_block", RgbBlock::new);
+        EVENT = register("event_block", EventBlock::new);
+        FEEDBACK = register("feedback_block", FeedbackBlock::new);
 
-        NOTE = register("note_fixture_block", new NoteBlockFixture(fixtureSettings()));
-        SOUND_METER = register("sound_meter_block", new SoundMeterBlock(fixtureSettings()));
-        BEAT = register("beat_block", new BeatBlock(fixtureSettings()));
-        SPECTRUM = register("spectrum_block", new SpectrumBlock(fixtureSettings()));
+        NOTE = register("note_fixture_block", NoteBlockFixture::new);
+        SOUND_METER = register("sound_meter_block", SoundMeterBlock::new);
+        BEAT = register("beat_block", BeatBlock::new);
+        SPECTRUM = register("spectrum_block", SpectrumBlock::new);
     }
 
-    private static AbstractBlock.Settings fixtureSettings() {
-        // like a redstone lamp: solid, opaque, mineable
-        return AbstractBlock.Settings.copy(Blocks.REDSTONE_LAMP);
+    private static BlockBehaviour.Properties fixtureProperties() {
+        // like a redstone lamp: solid, opaque, mineable. The copied light level
+        // has to be replaced: the lamp's reads its LIT property, and these
+        // blocks do not declare one, so building their states would throw.
+        return BlockBehaviour.Properties.ofFullCopy(Blocks.REDSTONE_LAMP)
+                .lightLevel(state -> 0);
     }
 
-    private static Block register(String name, Block block) {
-        Identifier id = Identifier.of(MineLightMod.MOD_ID, name);
-        Registry.register(Registries.BLOCK, id, block);
-        Registry.register(Registries.ITEM, id,
-                new BlockItem(block, new Item.Settings()));
+    // Blocks and items resolve their description id from the registry key, so
+    // the key has to be on the properties before the instance is constructed.
+    private static Block register(String name, Function<BlockBehaviour.Properties, Block> factory) {
+        Identifier id = Identifier.fromNamespaceAndPath(MineLightMod.MOD_ID, name);
+        ResourceKey<Block> blockKey = ResourceKey.create(Registries.BLOCK, id);
+        ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, id);
+
+        Block block = factory.apply(fixtureProperties().setId(blockKey));
+        Registry.register(BuiltInRegistries.BLOCK, blockKey, block);
+        Registry.register(BuiltInRegistries.ITEM, itemKey,
+                new BlockItem(block, new Item.Properties().useBlockDescriptionPrefix().setId(itemKey)));
         return block;
     }
 }
