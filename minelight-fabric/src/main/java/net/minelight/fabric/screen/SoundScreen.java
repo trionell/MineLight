@@ -20,12 +20,19 @@ import org.lwjgl.glfw.GLFW;
 public class SoundScreen extends AbstractContainerScreen<SoundScreenHandler> {
 
     private static final String[] LABELS =
-            {"radius", "universe", "channel", "gain", "decay", "threshold"};
+            {"Radius", "Universe", "Channel", "Gain", "Decay", "Beat thr."};
+
+    private static final int ROW_H = 24;
+    private static final int FIRST_ROW_Y = 24;
+    /** Nudges an 8px glyph down into the middle of a 20px field. */
+    private static final int LABEL_BASELINE = 6;
+    /** Label colour needs a full alpha byte: a zero alpha draws nothing at all. */
+    private static final int LABEL_ARGB = 0xFF5FD0FF;
 
     private final EditBox[] fields = new EditBox[LABELS.length];
 
     public SoundScreen(SoundScreenHandler handler, Inventory inventory, Component title) {
-        super(handler, inventory, title, DEFAULT_IMAGE_WIDTH, 40 + LABELS.length * 24);
+        super(handler, inventory, title, DEFAULT_IMAGE_WIDTH, 40 + LABELS.length * ROW_H);
     }
 
     @Override
@@ -36,14 +43,14 @@ public class SoundScreen extends AbstractContainerScreen<SoundScreenHandler> {
                 String.valueOf(d.radius()), String.valueOf(d.universe()), String.valueOf(d.channel()),
                 String.valueOf(d.gain()), String.valueOf(d.decay()), String.valueOf(d.beatThreshold())
         };
-        int y = this.topPos + 24;
+        int y = this.topPos + FIRST_ROW_Y;
         for (int i = 0; i < LABELS.length; i++) {
             EditBox box = new EditBox(font, this.leftPos + 88, y, 72, 20, Component.literal(LABELS[i]));
             box.setValue(values[i]);
             box.setResponder(s -> send());
             addRenderableWidget(box);
             fields[i] = box;
-            y += 24;
+            y += ROW_H;
         }
     }
 
@@ -96,10 +103,10 @@ public class SoundScreen extends AbstractContainerScreen<SoundScreenHandler> {
     @Override
     protected void extractLabels(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         super.extractLabels(context, mouseX, mouseY);
-        int y = 12;
+        int y = FIRST_ROW_Y + LABEL_BASELINE;
         for (String label : LABELS) {
-            context.text(font, label, 8, y + 12, 0x5fd0ff, false);
-            y += 24;
+            context.text(font, label, 8, y, LABEL_ARGB, false);
+            y += ROW_H;
         }
     }
 }

@@ -33,6 +33,11 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
     private static final int CHANNEL_W = 48;
     private static final int EVENT_W = 96;
     private static final int ROW_H = 24;
+    private static final int FIRST_ROW_Y = 24;
+    /** Nudges an 8px glyph down into the middle of a 20px field. */
+    private static final int LABEL_BASELINE = 6;
+    /** Label colour needs a full alpha byte: a zero alpha draws nothing at all. */
+    private static final int LABEL_ARGB = 0xFF5FD0FF;
 
     /**
      * Live working copy per port. Every widget edits the current mapping rather
@@ -52,7 +57,7 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
         for (FixtureBlock.PortMapping port : menu.ports()) {
             working.put(port.name(), port);
         }
-        int y = this.topPos + 24;
+        int y = this.topPos + FIRST_ROW_Y;
         for (FixtureBlock.PortMapping port : menu.ports()) {
             addPortRow(port.name(), y);
             y += ROW_H;
@@ -145,9 +150,9 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
     @Override
     protected void extractLabels(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         super.extractLabels(context, mouseX, mouseY);
-        int y = 12;
+        int y = FIRST_ROW_Y + LABEL_BASELINE;
         for (FixtureBlock.PortMapping port : menu.ports()) {
-            context.text(font, port.name(), 8, y + 12, 0x5fd0ff, false);
+            context.text(font, port.name(), 8, y, LABEL_ARGB, false);
             y += ROW_H;
         }
     }
