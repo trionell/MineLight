@@ -7,15 +7,19 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import net.minelight.core.api.ProtocolServer;
 import net.minelight.core.engine.ConsoleEngine;
+import net.minelight.core.engine.EventLog;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The built-in WebConsole — a zero-install lighting console in the browser.
@@ -26,6 +30,12 @@ import java.util.concurrent.Executors;
  * always in sync with the game and with any real console connected via
  * Art-Net / sACN.</p>
  *
+ * <p>It is also the monitor: alongside the patch it streams every placed
+ * fixture and sound block with its live values, the status of each protocol
+ * server and the devices talking to it, and the engine's event log — the
+ * feedback and input signals coming back from the world and from real
+ * desks.</p>
+ *
  * <p>Because the WebConsole speaks the same internal API as GrandMA or
  * Titan, anything you build in the browser translates directly to the real
  * console later.</p>
@@ -34,6 +44,15 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
 
     public static final int WEB_PORT = 8090;
 
+    /** Telemetry push rate. Fast enough to read as live, slow enough to be cheap. */
+    private static final int LIVE_HZ = 10;
+
+    /** Device status changes on human timescales; polling it at LIVE_HZ is waste. */
+    private static final long DEVICE_INTERVAL_MS = 1000;
+
+    /** How long to trust a MIDI device enumeration before asking the OS again. */
+    private static final long MIDI_CACHE_MS = 5000;
+
     private static final Gson GSON = new Gson();
 
     private final ConsoleEngine engine;
@@ -41,6 +60,12 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
     private final java.util.Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
     private HttpServer server;
+    private ScheduledExecutorService live;
+    private List<String> midiInputs;
+    private long midiInputsAt;
+    private long lastDeviceBroadcast;
+    /** Highest event sequence already pushed to clients. */
+    private long sentSeq;
 
     public WebConsoleServer(ConsoleEngine engine) {
         this(engine, WEB_PORT);
@@ -76,10 +101,22 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
         server.createContext("/ws", this::handleWebSocket);
         server.start();
         engine.addDmxListener(this);
+
+        sentSeq = engine.eventLog().lastSeq();
+        live = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "minelight-webconsole-live");
+            t.setDaemon(true);
+            return t;
+        });
+        live.scheduleAtFixedRate(this::pushLive, 0, 1000 / LIVE_HZ, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public synchronized void stop() {
+        if (live != null) {
+            live.shutdownNow();
+            live = null;
+        }
         if (server != null) {
             server.stop(0);
             server = null;
@@ -176,7 +213,100 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
         engine.presets().keySet().forEach(presets::add);
         o.add("presets", presets);
         o.addProperty("script", engine.triggers().script());
+        o.add("blocks", engine.blocks().liveJson());
+        o.add("sound", engine.sound().liveJson());
+        o.add("devices", devicesJson());
+        // A fresh client gets the whole retained ring so the signal feed is
+        // populated the moment it connects, not only once something happens.
+        o.add("events", engine.eventLog().toJson(0));
+        o.addProperty("lastSeq", engine.eventLog().lastSeq());
         return o;
+    }
+
+    private JsonArray devicesJson() {
+        JsonArray arr = new JsonArray();
+        for (ProtocolServer s : engine.servers()) {
+            arr.add(s.status());
+        }
+        arr.add(midiStatus());
+        return arr;
+    }
+
+    /**
+     * MIDI inputs the JVM can see.
+     *
+     * <p>MineLight does not open them itself — {@code MidiService} is opt-in —
+     * but a monitor asking "what devices are there?" still wants to know a
+     * controller is plugged in, so they are reported as available rather than
+     * connected.</p>
+     */
+    private JsonObject midiStatus() {
+        JsonObject o = new JsonObject();
+        o.addProperty("name", "MIDI");
+        o.addProperty("running", false);
+        JsonArray peers = new JsonArray();
+        for (String input : cachedMidiInputs()) {
+            JsonObject p = new JsonObject();
+            p.addProperty("address", input);
+            p.addProperty("detail", "available");
+            peers.add(p);
+        }
+        o.add("peers", peers);
+        return o;
+    }
+
+    /** Enumerating MIDI devices hits the OS, so keep the answer for a while. */
+    private synchronized List<String> cachedMidiInputs() {
+        long now = System.currentTimeMillis();
+        if (midiInputs == null || now - midiInputsAt > MIDI_CACHE_MS) {
+            try {
+                midiInputs = net.minelight.core.midi.MidiService.availableInputs();
+            } catch (Throwable t) {
+                // headless servers and locked-down JVMs have no MIDI subsystem
+                midiInputs = List.of();
+            }
+            midiInputsAt = now;
+        }
+        return midiInputs;
+    }
+
+    /**
+     * Push telemetry that the DMX pump does not already carry: block and
+     * sound-block runtime values, device status, and new events.
+     */
+    private void pushLive() {
+        if (sessions.isEmpty()) {
+            return;
+        }
+        try {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "live");
+            o.add("blocks", engine.blocks().liveJson());
+            o.add("sound", engine.sound().liveJson());
+            JsonObject redstone = new JsonObject();
+            engine.redstoneSnapshot().forEach((id, on) -> redstone.addProperty(String.valueOf(id), on));
+            o.add("redstone", redstone);
+
+            long last = engine.eventLog().lastSeq();
+            if (last > sentSeq) {
+                List<EventLog.Entry> fresh = engine.eventLog().since(sentSeq);
+                JsonArray events = new JsonArray();
+                for (EventLog.Entry e : fresh) {
+                    events.add(e.toJson());
+                }
+                o.add("events", events);
+                sentSeq = last;
+            }
+
+            long now = System.currentTimeMillis();
+            if (now - lastDeviceBroadcast >= DEVICE_INTERVAL_MS) {
+                o.add("devices", devicesJson());
+                lastDeviceBroadcast = now;
+            }
+            broadcast(o);
+        } catch (Exception ignored) {
+            // a monitor must never take the engine down with it
+        }
     }
 
     private void onClientMessage(JsonObject msg) {
