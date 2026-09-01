@@ -6,6 +6,12 @@ pluginManagement {
     }
 }
 
+plugins {
+    // Minecraft 26.2 requires Java 25; let Gradle download a JDK when the
+    // machine has no suitable one installed.
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 rootProject.name = 'minelight'
 
 include('minelight-core')

@@ -1,59 +1,89 @@
-// MineLight Fabric mod.
+// MineLight Fabric mod, targeting Minecraft 26.2.
 //
-// Fabric's Maven (maven.fabricmc.net) and Mojang's download servers are
-// unreachable from some sandboxed CI environments. This build therefore
-// applies the Fabric Loom plugin only when it can be resolved; otherwise it
-// produces a "stub" jar so the multi-project build still succeeds and the
-// core module can be developed and tested end-to-end.
+// Minecraft ships unobfuscated from 26.1 onward, so Fabric no longer publishes
+// Yarn or intermediary mappings: this module compiles directly against Mojang's
+// own names and nothing is remapped. That is why dependencies use plain
+// `implementation` rather than `modImplementation`, there is no `mappings`
+// line, and `jar` (not `remapJar`) produces the loadable mod.
 //
-// On a machine with normal internet access, `./gradlew :minelight-fabric:build`
-// (or `gradle :minelight-fabric:build`) will download Loom, Minecraft 1.21.8,
-// Yarn mappings, and Fabric API, and produce a real, loadable mod jar.
+// Fabric's Maven is unreachable from some sandboxed CI environments. Loom is
+// therefore applied only when it can be resolved; otherwise this produces a
+// "stub" jar so the multi-project build still succeeds and the core module can
+// be developed and tested end-to-end.
+
+// Loom has to be on the buildscript classpath before `apply plugin` can find
+// it, so the availability probe lives here rather than in the project body.
+buildscript {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    ext.loomAvailable = true
+    try {
+        def probe = configurations.detachedConfiguration(
+                dependencies.create('net.fabricmc:fabric-loom:1.17.20'))
+        probe.transitive = false
+        probe.resolve()
+        dependencies {
+            classpath 'net.fabricmc:fabric-loom:1.17.20'
+        }
+    } catch (Exception ignored) {
+        ext.loomAvailable = false
+    }
+}
 
 apply plugin: 'java'
 
 group = 'net.minelight'
 version = '0.1.0'
 
-/* archivesName set via jar task for stub compat */
-
 repositories {
     maven { url = 'https://maven.fabricmc.net/' }
     mavenCentral()
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-}
-
-// Try to resolve Fabric Loom. If the Fabric Maven is unreachable we fall back
-// to a stub so `gradle build` at the root still works.
-def loomAvailable = true
-try {
-    configurations.detachedConfiguration(
-            dependencies.create('net.fabricmc:fabric-loom:1.11-SNAPSHOT')
-    ).with { it.transitive = false }.resolve()
-} catch (Exception ignored) {
-    loomAvailable = false
-    logger.warn('[MineLight] Fabric Maven unreachable; building minelight-fabric as a stub jar.')
-}
-
 if (loomAvailable) {
-    apply plugin: 'fabric-loom'
+    apply plugin: 'net.fabricmc.fabric-loom'
+
+    // Minecraft 26.2 runs on Java 25.
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
 
     dependencies {
-        minecraft "com.mojang:minecraft:1.21.8"
-        mappings "net.fabricmc:yarn:1.21.8+build.1:v2"
-        modImplementation "net.fabricmc:fabric-loader:0.16.14"
-        modImplementation "net.fabricmc.fabric-api:fabric-api:0.128.2+1.21.8"
+        minecraft 'com.mojang:minecraft:26.2'
+        implementation 'net.fabricmc:fabric-loader:0.19.3'
+        implementation 'net.fabricmc.fabric-api:fabric-api:0.159.0+26.2'
 
         implementation project(':minelight-core')
         implementation 'com.google.code.gson:gson:2.11.0'
         implementation 'org.luaj:luaj-jse:3.0.1'
+        implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
+
+        // `implementation` only reaches the compile classpath, so anything the
+        // engine needs at runtime has to be nested into the mod jar too.
+        // Gson is left out on purpose: Minecraft already ships it.
+        include project(':minelight-core')
+        include 'org.luaj:luaj-jse:3.0.1'
+        include 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        it.options.release = 25
     }
 } else {
+    logger.warn('[MineLight] Fabric Loom unavailable; building minelight-fabric as a stub jar.')
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
     // Stub: compile nothing, but still emit a jar with a marker so CI passes.
     sourceSets {
         main {
@@ -65,6 +95,10 @@ if (loomAvailable) {
     dependencies {
         implementation project(':minelight-core')
     }
+
+    tasks.withType(JavaCompile).configureEach {
+        it.options.release = 21
+    }
 }
 
 tasks.named('jar') {
@@ -73,7 +107,6 @@ tasks.named('jar') {
 
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = 'UTF-8'
-    it.options.release = 21
 }
 
 processResources {
