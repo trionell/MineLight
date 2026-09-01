@@ -1,6 +1,7 @@
 package net.minelight.core.osc;
 
 import net.minelight.core.api.GameEvent;
+import net.minelight.core.api.PeerTracker;
 import net.minelight.core.api.ProtocolServer;
 import net.minelight.core.engine.ConsoleEngine;
 
@@ -36,6 +37,7 @@ public final class OscServer implements ProtocolServer {
 
     private final ConsoleEngine engine;
     private final int port;
+    private final PeerTracker peers = new PeerTracker();
 
     private DatagramSocket socket;
     private Thread rxThread;
@@ -85,13 +87,21 @@ public final class OscServer implements ProtocolServer {
         return running;
     }
 
+    @Override
+    public com.google.gson.JsonObject status() {
+        com.google.gson.JsonObject o = ProtocolServer.super.status();
+        o.addProperty("port", port);
+        o.add("peers", peers.toJson());
+        return o;
+    }
+
     private void rxLoop() {
         byte[] buf = new byte[2048];
         while (running) {
             try {
                 DatagramPacket p = new DatagramPacket(buf, buf.length);
                 socket.receive(p);
-                handle(p.getData(), p.getLength());
+                handle(p.getData(), p.getLength(), p.getAddress(), p.getPort());
             } catch (IOException e) {
                 if (running) {
                     // transient
@@ -102,13 +112,14 @@ public final class OscServer implements ProtocolServer {
 
     // ---- OSC decoding (minimal) ------------------------------------------
 
-    private void handle(byte[] data, int len) {
+    private void handle(byte[] data, int len, InetAddress from, int fromPort) {
         try {
             ByteBuffer b = ByteBuffer.wrap(data, 0, len);
             String address = readString(b);
             if (!address.startsWith("/minelight")) {
                 return;
             }
+            peers.seen(from, fromPort, address);
             String types = readString(b);
             if (!types.startsWith(",")) {
                 return;

@@ -1,5 +1,6 @@
 package net.minelight.core.artnet;
 
+import net.minelight.core.api.PeerTracker;
 import net.minelight.core.api.ProtocolServer;
 import net.minelight.core.engine.ConsoleEngine;
 
@@ -42,6 +43,9 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
     private final String bindAddress;
     private final boolean inputEnabled;
     private final java.util.Set<Integer> outputUniverses = ConcurrentHashMap.newKeySet();
+    private final PeerTracker peers = new PeerTracker();
+    /** Last inbound frame per universe, so monitors can show what a desk sends. */
+    private final Map<Integer, byte[]> inbound = new ConcurrentHashMap<>();
 
     private DatagramSocket socket;
     private ScheduledExecutorService tx;
@@ -157,6 +161,27 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         return b.array();
     }
 
+    @Override
+    public com.google.gson.JsonObject status() {
+        com.google.gson.JsonObject o = ProtocolServer.super.status();
+        o.addProperty("input", inputEnabled);
+        o.addProperty("bind", bindAddress);
+        com.google.gson.JsonArray uni = new com.google.gson.JsonArray();
+        outputUniverses.stream().sorted().forEach(uni::add);
+        o.add("outputUniverses", uni);
+        com.google.gson.JsonArray in = new com.google.gson.JsonArray();
+        inbound.keySet().stream().sorted().forEach(in::add);
+        o.add("inputUniverses", in);
+        o.add("peers", peers.toJson());
+        return o;
+    }
+
+    /** The most recent frame received on a universe from a real desk, or null. */
+    public byte[] inboundFrame(int universe) {
+        byte[] f = inbound.get(universe);
+        return f == null ? null : f.clone();
+    }
+
     // ---- input ---------------------------------------------------------
 
     private void rxLoop() {
@@ -178,6 +203,12 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         if (len < 12) {
             return;
         }
+        // We broadcast to 255.255.255.255 on the port we also listen on, so
+        // every frame we send comes straight back. Ignoring ourselves keeps
+        // MineLight out of its own Devices list.
+        if (isSelf(from)) {
+            return;
+        }
         for (int i = 0; i < 8; i++) {
             if (data[i] != ARTNET_HEADER[i]) {
                 return;
@@ -185,20 +216,27 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         }
         int opcode = (data[8] & 0xFF) | ((data[9] & 0xFF) << 8);
         switch (opcode) {
-            case OP_POLL -> sendPollReply(from, fromPort);
-            case OP_DMX -> handleDmx(data, len);
+            case OP_POLL -> {
+                peers.seen(from, fromPort, "ArtPoll");
+                sendPollReply(from, fromPort);
+            }
+            case OP_DMX -> handleDmx(data, len, from, fromPort);
             default -> {
             }
         }
     }
 
-    private void handleDmx(byte[] data, int len) {
+    private void handleDmx(byte[] data, int len, InetAddress from, int fromPort) {
         if (len < 18) {
             return;
         }
         int universe = ((data[14] & 0xFF) | ((data[15] & 0xFF) << 8)) & 0x7FFF;
         int dmxLen = ((data[16] & 0xFF) << 8) | (data[17] & 0xFF);
         dmxLen = Math.min(dmxLen, Math.min(512, len - 18));
+        peers.seen(from, fromPort, "ArtDmx u" + universe);
+        byte[] frame = new byte[512];
+        System.arraycopy(data, 18, frame, 0, dmxLen);
+        inbound.put(universe, frame);
         Map<String, Object> ev = new java.util.HashMap<>();
         ev.put("universe", universe);
         // pass first few channels for scripting convenience
@@ -206,6 +244,15 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
             ev.put("ch" + (i + 1), data[18 + i] & 0xFF);
         }
         engine.emit(new net.minelight.core.api.GameEvent("artnet.dmx", ev));
+    }
+
+    private static boolean isSelf(InetAddress from) {
+        try {
+            return from.isAnyLocalAddress() || from.isLoopbackAddress()
+                    || java.net.NetworkInterface.getByInetAddress(from) != null;
+        } catch (java.net.SocketException e) {
+            return false;
+        }
     }
 
     private void sendPollReply(InetAddress to, int port) throws IOException {

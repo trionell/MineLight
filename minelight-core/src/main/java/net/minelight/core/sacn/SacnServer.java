@@ -112,6 +112,27 @@ public final class SacnServer implements ProtocolServer, SacnOutput {
         return running;
     }
 
+    @Override
+    public com.google.gson.JsonObject status() {
+        com.google.gson.JsonObject o = ProtocolServer.super.status();
+        // sACN here is multicast output only, so there is nothing to discover
+        // on the wire: what a monitor wants is which universes we transmit and
+        // at what priority a receiving desk will merge them.
+        com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+        universes.entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .forEach(e -> {
+                    com.google.gson.JsonObject u = new com.google.gson.JsonObject();
+                    u.addProperty("universe", e.getKey());
+                    u.addProperty("enabled", e.getValue().enabled);
+                    u.addProperty("priority", e.getValue().priority);
+                    u.addProperty("sequence", e.getValue().sequence);
+                    arr.add(u);
+                });
+        o.add("universes", arr);
+        return o;
+    }
+
     private void sendAll() {
         if (!running) {
             return;

@@ -1,5 +1,7 @@
 package net.minelight.core.api;
 
+import com.google.gson.JsonObject;
+
 /**
  * A network-facing protocol endpoint (Art-Net, sACN, OSC, HTTP, MQTT, ...).
  *
@@ -24,4 +26,20 @@ public interface ProtocolServer {
     void stop();
 
     boolean isRunning();
+
+    /**
+     * A live status snapshot for monitors (the WebConsole Devices panel).
+     *
+     * <p>The base fields are the same for every server; implementations
+     * override this to add what only they can know — enabled universes,
+     * {@link PeerTracker} entries for the desks that have spoken to them,
+     * open MIDI ports, and so on.</p>
+     */
+    default JsonObject status() {
+        JsonObject o = new JsonObject();
+        o.addProperty("name", name());
+        o.addProperty("port", defaultPort());
+        o.addProperty("running", isRunning());
+        return o;
+    }
 }

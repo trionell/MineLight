@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import net.minelight.core.api.GameEvent;
+import net.minelight.core.api.PeerTracker;
 import net.minelight.core.api.ProtocolServer;
 import net.minelight.core.engine.ConsoleEngine;
 
@@ -45,6 +46,7 @@ public final class HttpApiServer implements ProtocolServer {
 
     private static final Gson GSON = new Gson();
 
+    private final PeerTracker peers = new PeerTracker();
     private final ConsoleEngine engine;
     private final int port;
     private HttpServer server;
@@ -80,16 +82,18 @@ public final class HttpApiServer implements ProtocolServer {
             return t;
         }));
 
-        server.createContext("/api/patch", this::handlePatch);
-        server.createContext("/api/dmx", this::handleDmx);
-        server.createContext("/api/fixture", this::handleFixture);
-        server.createContext("/api/presets", this::handlePresets);
-        server.createContext("/api/cue", this::handleCue);
-        server.createContext("/api/event", this::handleEvent);
-        server.createContext("/api/redstone", this::handleRedstone);
-        server.createContext("/api/script", this::handleScript);
-        server.createContext("/api/status", this::handleStatus);
-        server.createContext("/api/blocks", this::handleBlocks);
+        server.createContext("/api/patch", tracked(this::handlePatch));
+        server.createContext("/api/dmx", tracked(this::handleDmx));
+        server.createContext("/api/fixture", tracked(this::handleFixture));
+        server.createContext("/api/presets", tracked(this::handlePresets));
+        server.createContext("/api/cue", tracked(this::handleCue));
+        server.createContext("/api/event", tracked(this::handleEvent));
+        server.createContext("/api/redstone", tracked(this::handleRedstone));
+        server.createContext("/api/script", tracked(this::handleScript));
+        server.createContext("/api/status", tracked(this::handleStatus));
+        server.createContext("/api/blocks", tracked(this::handleBlocks));
+        server.createContext("/api/devices", tracked(this::handleDevices));
+        server.createContext("/api/events", tracked(this::handleEvents));
 
         server.start();
     }
@@ -105,6 +109,23 @@ public final class HttpApiServer implements ProtocolServer {
     @Override
     public boolean isRunning() {
         return server != null;
+    }
+
+    /** Wrap a handler so every call is credited to the caller in the peer list. */
+    private com.sun.net.httpserver.HttpHandler tracked(com.sun.net.httpserver.HttpHandler inner) {
+        return ex -> {
+            peers.seen(ex.getRemoteAddress().getAddress(), ex.getRemoteAddress().getPort(),
+                    ex.getRequestMethod() + " " + ex.getRequestURI().getPath());
+            inner.handle(ex);
+        };
+    }
+
+    @Override
+    public JsonObject status() {
+        JsonObject o = ProtocolServer.super.status();
+        o.addProperty("port", port);
+        o.add("peers", peers.toJson());
+        return o;
     }
 
     // ---- helpers ---------------------------------------------------------
@@ -321,6 +342,32 @@ public final class HttpApiServer implements ProtocolServer {
             arr.add(o);
         }
         sendJson(ex, 200, arr);
+    }
+
+    /** Live status of every registered protocol server, for monitoring. */
+    private void handleDevices(HttpExchange ex) throws IOException {
+        JsonArray arr = new JsonArray();
+        for (ProtocolServer s : engine.servers()) {
+            arr.add(s.status());
+        }
+        sendJson(ex, 200, arr);
+    }
+
+    /** Recent engine events; {@code ?after=<seq>} tails the log. */
+    private void handleEvents(HttpExchange ex) throws IOException {
+        long after = 0;
+        String query = ex.getRequestURI().getQuery();
+        if (query != null && query.startsWith("after=")) {
+            try {
+                after = Long.parseLong(query.substring("after=".length()));
+            } catch (NumberFormatException ignored) {
+                // treat a junk cursor as "from the start of the ring"
+            }
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("lastSeq", engine.eventLog().lastSeq());
+        o.add("events", engine.eventLog().toJson(after));
+        sendJson(ex, 200, o);
     }
 
     private void handleScript(HttpExchange ex) throws IOException {
