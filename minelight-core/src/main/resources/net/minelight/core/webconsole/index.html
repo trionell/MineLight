@@ -15,6 +15,7 @@
     --accent-2: #5fd0ff;
     --ok: #4ade80;
     --bad: #f87171;
+    --warn: #fbbf24;
     --border: #1f2a38;
   }
   * { box-sizing: border-box; }
@@ -30,8 +31,10 @@
   header h1 { font-size:16px; margin:0; letter-spacing:1px; }
   header .dot { width:10px; height:10px; border-radius:50%; background:var(--bad); }
   header .dot.on { background:var(--ok); box-shadow:0 0 8px var(--ok); }
-  main { display:grid; grid-template-columns: 1fr 380px; gap:12px; padding:12px; }
-  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
+  header .counts { margin-left:auto; font-size:12px; color:var(--muted); }
+  header .counts b { color:var(--accent-2); font-weight:normal; }
+  main { display:grid; grid-template-columns: 1fr 380px; gap:12px; padding:12px; align-items:start; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; }
   .panel h2 { margin:0 0 10px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
   #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:8px; }
   .chan { background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:8px; position:relative; }
@@ -41,7 +44,7 @@
   .chan .bar i { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(180deg,var(--accent),#7a2d00); }
   .chan .rs { position:absolute; top:6px; right:6px; width:10px; height:10px; border-radius:2px; background:#333; }
   .chan .rs.on { background:var(--accent); box-shadow:0 0 8px var(--accent); }
-  .row { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .row { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
   button, input, select, textarea {
     background:var(--panel-2); color:var(--text); border:1px solid var(--border);
     border-radius:6px; padding:6px 10px; font:inherit; font-size:13px;
@@ -51,10 +54,54 @@
   button.go { background:var(--accent); color:#000; font-weight:bold; border:none; padding:10px 22px; font-size:16px; }
   button.go:hover { filter:brightness(1.1); }
   textarea { width:100%; height:260px; resize:vertical; }
-  .tabs { display:flex; gap:6px; margin-bottom:10px; }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
   .tabs button.active { border-color:var(--accent); color:var(--accent); }
   #presets button { min-width:80px; }
   .log { height:140px; overflow:auto; background:#000; border-radius:6px; padding:8px; font-size:12px; color:var(--muted); }
+
+  /* ---- monitor views ---- */
+  .empty { color:var(--muted); font-size:12px; padding:8px 0; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:10px; }
+  .card { background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:10px; }
+  .card .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .card .head .id { color:var(--muted); font-size:12px; }
+  .card .head .title { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .card .head .tag {
+    margin-left:auto; font-size:10px; letter-spacing:1px; padding:2px 6px;
+    border:1px solid var(--border); border-radius:4px; color:var(--accent-2);
+  }
+  .card .pos { font-size:11px; color:var(--muted); margin-bottom:8px; }
+  .swatch { width:34px; height:34px; border-radius:4px; border:1px solid var(--border); flex:none; }
+  table.ports { width:100%; border-collapse:collapse; font-size:11px; }
+  table.ports th { text-align:left; color:var(--muted); font-weight:normal; padding:2px 4px; }
+  table.ports td { padding:3px 4px; border-top:1px solid var(--border); vertical-align:middle; }
+  table.ports td.num { text-align:right; color:var(--accent-2); }
+  .meter { height:8px; background:#000; border-radius:3px; overflow:hidden; min-width:60px; }
+  .meter i { display:block; height:100%; background:linear-gradient(90deg,#7a2d00,var(--accent)); }
+  .meter.cool i { background:linear-gradient(90deg,#124a63,var(--accent-2)); }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:11px; }
+  .kv span:nth-child(odd) { color:var(--muted); }
+  .pill { font-size:10px; padding:1px 6px; border-radius:10px; border:1px solid var(--border); color:var(--muted); }
+  .pill.on { color:#000; background:var(--ok); border-color:var(--ok); }
+  .pill.off { color:var(--muted); }
+  .beat { width:12px; height:12px; border-radius:50%; background:#333; }
+  .beat.on { background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  table.grid { width:100%; border-collapse:collapse; font-size:11px; }
+  table.grid th { text-align:left; color:var(--muted); font-weight:normal; padding:4px 6px; border-bottom:1px solid var(--border); }
+  table.grid td { padding:4px 6px; border-bottom:1px solid var(--border); }
+  table.grid tr:last-child td { border-bottom:none; }
+  .stale { color:var(--muted); }
+  #signals { height:520px; overflow:auto; }
+  #signals table { width:100%; border-collapse:collapse; font-size:11px; }
+  #signals td { padding:2px 6px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  #signals td.time { color:var(--muted); width:90px; }
+  #signals td.kind { width:150px; }
+  #signals td.data { white-space:normal; color:var(--muted); }
+  .k-block { color:var(--accent); }
+  .k-sound { color:var(--accent-2); }
+  .k-redstone { color:var(--warn); }
+  .k-in { color:var(--ok); }
+  .k-other { color:var(--text); }
 </style>
 </head>
 <body>
@@ -62,12 +109,51 @@
   <div class="dot" id="dot"></div>
   <h1>MINELIGHT CONSOLE</h1>
   <span id="status" style="color:var(--muted);font-size:12px"></span>
+  <span class="counts" id="counts"></span>
 </header>
 <main>
-  <section class="panel">
-    <h2>Fixtures</h2>
-    <div id="grid"></div>
+  <section>
+    <div class="tabs" id="tabs"></div>
+
+    <div class="panel view" id="view-patch">
+      <h2>Patch</h2>
+      <div id="grid"></div>
+      <div class="empty" id="patchEmpty" hidden>No fixtures patched.</div>
+    </div>
+
+    <div class="panel view" id="view-blocks" hidden>
+      <h2>Fixture Blocks</h2>
+      <div class="cards" id="blocks"></div>
+      <div class="empty" id="blocksEmpty" hidden>
+        No fixture blocks placed. Place a dimmer, RGB, event or feedback block in the world.
+      </div>
+    </div>
+
+    <div class="panel view" id="view-sound" hidden>
+      <h2>Sound Blocks</h2>
+      <div class="cards" id="sound"></div>
+      <div class="empty" id="soundEmpty" hidden>
+        No sound blocks placed. Place a sound meter, beat, spectrum or note fixture.
+      </div>
+    </div>
+
+    <div class="panel view" id="view-devices" hidden>
+      <h2>Devices</h2>
+      <div class="cards" id="devices"></div>
+    </div>
+
+    <div class="panel view" id="view-signals" hidden>
+      <h2>Signals</h2>
+      <div class="row">
+        <input id="signalFilter" placeholder="filter kind, e.g. block. or artnet"
+               oninput="renderSignals()" style="flex:1">
+        <button id="pauseBtn" onclick="togglePause()">Pause</button>
+        <button onclick="events=[];renderSignals()">Clear</button>
+      </div>
+      <div id="signals"></div>
+    </div>
   </section>
+
   <aside>
     <div class="panel">
       <h2>Presets</h2>
@@ -100,7 +186,20 @@
   </aside>
 </main>
 <script>
-let ws, state = {patch:{fixtures:[]}, dmx:{}, redstone:{}, presets:[]};
+const TABS = [
+  {id:'patch',   label:'Patch'},
+  {id:'blocks',  label:'Blocks'},
+  {id:'sound',   label:'Sound'},
+  {id:'devices', label:'Devices'},
+  {id:'signals', label:'Signals'},
+];
+const MAX_SIGNALS = 500;
+
+let ws;
+let state = {patch:{fixtures:[]}, dmx:{}, redstone:{}, presets:[], blocks:[], sound:[], devices:[]};
+let events = [];
+let paused = false;
+let tab = 'patch';
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -109,9 +208,33 @@ function connect() {
   ws.onclose = () => { setConn(false); log('disconnected, retrying…'); setTimeout(connect, 1000); };
   ws.onmessage = ev => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === 'state') { state = msg; render(); }
-    if (msg.type === 'dmx') { state.dmx = msg.dmx; renderLevels(); }
+    if (msg.type === 'state') {
+      state = msg;
+      events = (msg.events || []).slice().reverse();
+      render();
+    } else if (msg.type === 'dmx') {
+      state.dmx = msg.dmx;
+      renderLevels();
+    } else if (msg.type === 'live') {
+      applyLive(msg);
+    }
   };
+}
+
+function applyLive(msg) {
+  if (msg.blocks) state.blocks = msg.blocks;
+  if (msg.sound) state.sound = msg.sound;
+  if (msg.redstone) state.redstone = msg.redstone;
+  if (msg.devices) state.devices = msg.devices;
+  if (msg.events && msg.events.length) {
+    // newest first, capped — the server ring is the source of truth for history
+    events = msg.events.slice().reverse().concat(events).slice(0, MAX_SIGNALS);
+  }
+  renderCounts();
+  if (tab === 'blocks') renderBlocks();
+  else if (tab === 'sound') renderSound();
+  else if (tab === 'devices') renderDevices();
+  else if (tab === 'signals' && msg.events && msg.events.length) renderSignals();
 }
 
 function setConn(on) {
@@ -121,16 +244,57 @@ function setConn(on) {
 
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
-function render() {
-  renderFixtures();
-  renderPresets();
-  document.getElementById('script').value = state.script || '';
+function renderTabs() {
+  const bar = document.getElementById('tabs');
+  bar.innerHTML = '';
+  for (const t of TABS) {
+    const b = document.createElement('button');
+    b.textContent = t.label;
+    if (t.id === tab) b.className = 'active';
+    b.onclick = () => selectTab(t.id);
+    bar.appendChild(b);
+  }
 }
+
+function selectTab(id) {
+  tab = id;
+  for (const t of TABS) {
+    document.getElementById('view-' + t.id).hidden = t.id !== id;
+  }
+  renderTabs();
+  render();
+}
+
+function render() {
+  renderTabs();
+  renderCounts();
+  renderFixtures();
+  renderBlocks();
+  renderSound();
+  renderDevices();
+  renderSignals();
+  renderPresets();
+  const script = document.getElementById('script');
+  if (document.activeElement !== script) script.value = state.script || '';
+}
+
+function renderCounts() {
+  const online = (state.devices || []).filter(d => d.running).length;
+  document.getElementById('counts').innerHTML =
+    `fixtures <b>${(state.patch.fixtures || []).length}</b> · ` +
+    `blocks <b>${(state.blocks || []).length}</b> · ` +
+    `sound <b>${(state.sound || []).length}</b> · ` +
+    `devices <b>${online}</b>`;
+}
+
+/* ---- patch ---- */
 
 function renderFixtures() {
   const grid = document.getElementById('grid');
+  const fixtures = state.patch.fixtures || [];
+  document.getElementById('patchEmpty').hidden = fixtures.length > 0;
   grid.innerHTML = '';
-  for (const f of state.patch.fixtures) {
+  for (const f of fixtures) {
     const div = document.createElement('div');
     div.className = 'chan';
     div.innerHTML = `
@@ -148,9 +312,8 @@ function renderFixtures() {
 }
 
 function renderLevels() {
-  for (const f of state.patch.fixtures) {
-    const uni = state.dmx[String(f.universe)];
-    const v = uni ? (uni[f.address - 1] || 0) : 0;
+  for (const f of (state.patch.fixtures || [])) {
+    const v = chan(f.universe, f.address);
     const val = document.querySelector(`[data-val="${f.id}"]`);
     const bar = document.querySelector(`[data-bar="${f.id}"]`);
     const slider = document.querySelector(`[data-slider="${f.id}"]`);
@@ -162,10 +325,208 @@ function renderLevels() {
   }
 }
 
+function chan(universe, address) {
+  const uni = state.dmx[String(universe)];
+  return uni ? (uni[address - 1] || 0) : 0;
+}
+
+/* ---- fixture blocks ---- */
+
+function renderBlocks() {
+  const host = document.getElementById('blocks');
+  const blocks = state.blocks || [];
+  document.getElementById('blocksEmpty').hidden = blocks.length > 0;
+  host.innerHTML = '';
+  for (const b of blocks) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const swatch = b.color
+      ? `<div class="swatch" style="background:${esc(b.color)}" title="${esc(b.color)}"></div>` : '';
+    let extra = '';
+    if (b.type === 'FEEDBACK') {
+      extra = `<div class="row" style="margin:8px 0 0">
+                 <span class="pill">console → redstone</span>
+                 <span style="color:var(--accent-2)">${b.feedbackLevel ?? 0}/15</span>
+                 <div class="meter" style="flex:1"><i style="width:${(b.feedbackLevel ?? 0) / 15 * 100}%"></i></div>
+               </div>`;
+    }
+    card.innerHTML = `
+      <div class="head">
+        ${swatch}
+        <div>
+          <div class="title">${esc(b.name)}</div>
+          <div class="id">#${b.id}</div>
+        </div>
+        <span class="tag">${esc(b.type)}</span>
+      </div>
+      <div class="pos">${b.x}, ${b.y}, ${b.z}</div>
+      ${portTable(b)}
+      ${extra}`;
+    host.appendChild(card);
+  }
+}
+
+function portTable(b) {
+  const rows = (b.ports || []).map(p => {
+    const raw = p.raw || 0;
+    if (p.action === 'EMIT_EVENT') {
+      return `<tr>
+        <td>${esc(p.name)}</td>
+        <td>${esc(p.side)}</td>
+        <td colspan="2">${esc(p.event || '—')}</td>
+        <td class="num">${raw}/15</td>
+        <td class="num" title="times fired">${p.fires || 0}×</td>
+      </tr>`;
+    }
+    const dmx = p.dmx || 0;
+    return `<tr>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.side)}</td>
+      <td>u${p.universe}.${p.channel}</td>
+      <td style="width:35%"><div class="meter"><i style="width:${dmx / 255 * 100}%"></i></div></td>
+      <td class="num">${raw}/15</td>
+      <td class="num">${dmx}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="ports">
+    <tr><th>port</th><th>side</th><th>target</th><th></th><th>in</th><th>out</th></tr>
+    ${rows}</table>`;
+}
+
+/* ---- sound blocks ---- */
+
+function renderSound() {
+  const host = document.getElementById('sound');
+  const blocks = state.sound || [];
+  document.getElementById('soundEmpty').hidden = blocks.length > 0;
+  host.innerHTML = '';
+  for (const b of blocks) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const swatch = b.color
+      ? `<div class="swatch" style="background:${esc(b.color)}" title="${esc(b.color)}"></div>` : '';
+    const out = (b.dmx || []).map(v => v).join(' / ');
+    const note = b.mode === 'NOTE'
+      ? `<span>note</span><span>${b.lastNote < 0 ? '—' : b.lastNote + ' ' + esc(b.lastInstrument || '')}</span>` : '';
+    const beat = b.mode === 'BEAT'
+      ? `<span>beat</span><span><span class="beat${b.beat ? ' on' : ''}"></span>
+           thr ${fmt(b.beatThreshold)} · avg ${fmt(b.runningAvg)}</span>` : '';
+    card.innerHTML = `
+      <div class="head">
+        ${swatch}
+        <div>
+          <div class="title">${esc(b.name)}</div>
+          <div class="id">#${b.id}</div>
+        </div>
+        <span class="tag">${esc(b.mode)}</span>
+      </div>
+      <div class="pos">${b.x}, ${b.y}, ${b.z} · radius ${b.radius}</div>
+      <div class="kv">
+        <span>output</span><span>u${b.universe}.${b.channel} → ${out || 0}</span>
+        <span>input</span><span><div class="meter cool"><i style="width:${clampPct(b.level)}%"></i></div></span>
+        <span>envelope</span><span><div class="meter"><i style="width:${clampPct(b.envelope)}%"></i></div></span>
+        <span>gain</span><span>${fmt(b.gain)} · decay ${fmt(b.decay)}</span>
+        ${note}
+        ${beat}
+      </div>`;
+    host.appendChild(card);
+  }
+}
+
+/* ---- devices ---- */
+
+function renderDevices() {
+  const host = document.getElementById('devices');
+  host.innerHTML = '';
+  for (const d of (state.devices || [])) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="head">
+        <div class="title">${esc(d.name)}</div>
+        <span class="tag">${d.running ? 'RUNNING' : 'IDLE'}</span>
+      </div>
+      <div class="kv">${deviceFields(d)}</div>
+      ${peerTable(d.peers)}`;
+    host.appendChild(card);
+  }
+}
+
+function deviceFields(d) {
+  const parts = [];
+  if (d.port) parts.push(['port', d.port]);
+  if (d.bind) parts.push(['bind', d.bind]);
+  if (d.input !== undefined) parts.push(['input', d.input ? 'enabled' : 'off']);
+  if (d.outputUniverses) parts.push(['out universes', d.outputUniverses.join(', ') || '—']);
+  if (d.inputUniverses) parts.push(['in universes', d.inputUniverses.join(', ') || '—']);
+  if (d.universes) {
+    parts.push(['universes', d.universes
+      .map(u => `u${u.universe}${u.enabled ? '' : ' (off)'} @p${u.priority}`).join(', ') || '—']);
+  }
+  return parts.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('');
+}
+
+function peerTable(peers) {
+  if (!peers || !peers.length) {
+    return '<div class="empty">nothing has connected</div>';
+  }
+  const rows = peers.map(p => {
+    const stale = p.ageMs !== undefined && p.ageMs > 5000;
+    return `<tr class="${stale ? 'stale' : ''}">
+      <td>${esc(p.address)}</td>
+      <td>${esc(p.detail || '')}</td>
+      <td>${p.packets !== undefined ? p.packets : ''}</td>
+      <td>${p.ageMs !== undefined ? ago(p.ageMs) : ''}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="grid" style="margin-top:8px">
+    <tr><th>peer</th><th>last</th><th>pkts</th><th>seen</th></tr>${rows}</table>`;
+}
+
+/* ---- signals ---- */
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+  if (!paused) renderSignals();
+}
+
+function renderSignals() {
+  if (paused) return;
+  const filter = document.getElementById('signalFilter').value.trim().toLowerCase();
+  const rows = events
+    .filter(e => !filter || e.kind.toLowerCase().includes(filter))
+    .slice(0, MAX_SIGNALS)
+    .map(e => `<tr>
+      <td class="time">${clock(e.at)}</td>
+      <td class="kind ${kindClass(e.kind)}">${esc(e.kind)}</td>
+      <td class="data">${esc(summarise(e.data))}</td>
+    </tr>`).join('');
+  document.getElementById('signals').innerHTML =
+    rows ? `<table>${rows}</table>` : '<div class="empty">no signals yet</div>';
+}
+
+function kindClass(kind) {
+  if (kind.startsWith('block.')) return 'k-block';
+  if (kind.startsWith('sound.')) return 'k-sound';
+  if (kind.startsWith('redstone.')) return 'k-redstone';
+  // signals arriving from outside MineLight rather than generated inside it
+  if (kind.startsWith('artnet.') || kind.startsWith('osc.') || kind.startsWith('midi.')
+      || kind.startsWith('mqtt.')) return 'k-in';
+  return 'k-other';
+}
+
+function summarise(data) {
+  if (!data) return '';
+  return Object.entries(data).map(([k, v]) => k + '=' + v).join('  ');
+}
+
+/* ---- controls ---- */
+
 function renderPresets() {
   const div = document.getElementById('presets');
   div.innerHTML = '';
-  for (const p of state.presets) {
+  for (const p of (state.presets || [])) {
     const b = document.createElement('button');
     b.textContent = p;
     b.onclick = () => send({type:'preset', name:p});
@@ -178,9 +539,8 @@ function savePreset() {
   const name = document.getElementById('presetName').value.trim();
   if (!name) return;
   const levels = {};
-  for (const f of state.patch.fixtures) {
-    const uni = state.dmx[String(f.universe)];
-    levels[f.id] = [ uni ? (uni[f.address - 1] || 0) : 0 ];
+  for (const f of (state.patch.fixtures || [])) {
+    levels[f.id] = [ chan(f.universe, f.address) ];
   }
   send({type:'savePreset', name, levels});
 }
@@ -188,9 +548,21 @@ function cueGo() { send({type:'cue', list:'main'}); }
 function cueGoIndex() { send({type:'cue', list:'main', index:+document.getElementById('cueIndex').value}); }
 function reloadScript() { send({type:'script', script:document.getElementById('script').value}); log('script applied'); }
 
-function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+/* ---- helpers ---- */
+
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmt(n){ return (Math.round((n || 0) * 100) / 100).toFixed(2); }
+function clampPct(v){ return Math.max(0, Math.min(1, v || 0)) * 100; }
+function clock(ms){ return new Date(ms).toLocaleTimeString(undefined, {hour12:false}) ; }
+function ago(ms){
+  if (ms < 1000) return 'now';
+  if (ms < 60000) return Math.round(ms / 1000) + 's';
+  if (ms < 3600000) return Math.round(ms / 60000) + 'm';
+  return Math.round(ms / 3600000) + 'h';
+}
 function log(m){ const l=document.getElementById('log'); l.innerHTML += '<div>'+esc(m)+'</div>'; l.scrollTop=l.scrollHeight; }
 
+renderTabs();
 connect();
 </script>
 </body>
