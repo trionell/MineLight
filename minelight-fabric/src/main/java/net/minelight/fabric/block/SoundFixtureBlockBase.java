@@ -1,13 +1,16 @@
 package net.minelight.fabric.block;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockEntityProvider;
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.minelight.core.sound.SoundEngine;
 import net.minelight.fabric.blockentity.SoundBlockEntity;
 
@@ -15,11 +18,11 @@ import net.minelight.fabric.blockentity.SoundBlockEntity;
  * Base for sound-reactive fixture blocks. Right-click opens the config screen
  * (radius, gain, channel map); breaking the block unregisters it.
  */
-public abstract class SoundFixtureBlockBase extends Block implements BlockEntityProvider {
+public abstract class SoundFixtureBlockBase extends Block implements EntityBlock {
 
     private final SoundEngine.Mode mode;
 
-    protected SoundFixtureBlockBase(Settings settings, SoundEngine.Mode mode) {
+    protected SoundFixtureBlockBase(Properties settings, SoundEngine.Mode mode) {
         super(settings);
         this.mode = mode;
     }
@@ -29,28 +32,34 @@ public abstract class SoundFixtureBlockBase extends Block implements BlockEntity
     }
 
     @Override
-    public abstract SoundBlockEntity createBlockEntity(BlockPos pos, BlockState state);
+    public abstract SoundBlockEntity newBlockEntity(BlockPos pos, BlockState state);
 
     @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos,
-                                 PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient()) {
-            return ActionResult.SUCCESS;
+    protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos,
+                                 Player player, BlockHitResult hit) {
+        if (world.isClientSide()) {
+            return InteractionResult.SUCCESS;
         }
         if (world.getBlockEntity(pos) instanceof SoundBlockEntity be) {
-            player.openHandledScreen(be);
+            player.openMenu(be);
         }
-        return ActionResult.CONSUME;
+        return InteractionResult.CONSUME;
     }
 
+
+    // Nothing ticks a block entity unless its block hands out a ticker, and
+    // without ticking SoundBlockEntity never registers with the engine.
     @Override
-    protected void onStateReplaced(BlockState state, World world, BlockPos pos,
-                                   BlockState newState, boolean moved) {
-        if (!state.isOf(newState.getBlock())) {
-            if (world.getBlockEntity(pos) instanceof SoundBlockEntity be) {
-                be.unregister();
-            }
-            super.onStateReplaced(state, world, pos, newState, moved);
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state,
+                                                                 BlockEntityType<T> type) {
+        if (level.isClientSide()) {
+            return null;
         }
+        return (l, pos, st, be) -> {
+            if (be instanceof SoundBlockEntity fixture) {
+                fixture.tick();
+            }
+        };
     }
+
 }

@@ -1,13 +1,16 @@
 package net.minelight.fabric.block;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockEntityProvider;
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.minelight.fabric.blockentity.FixtureBlockEntity;
 
 /**
@@ -18,11 +21,11 @@ import net.minelight.fabric.blockentity.FixtureBlockEntity;
  * it to configure which channel / event it targets. Subclasses differ in how
  * many inputs they read and what they do with them.</p>
  */
-public abstract class FixtureBlockBase extends Block implements BlockEntityProvider {
+public abstract class FixtureBlockBase extends Block implements EntityBlock {
 
     private final net.minelight.core.api.FixtureBlock.Type engineType;
 
-    protected FixtureBlockBase(Settings settings, net.minelight.core.api.FixtureBlock.Type engineType) {
+    protected FixtureBlockBase(Properties settings, net.minelight.core.api.FixtureBlock.Type engineType) {
         super(settings);
         this.engineType = engineType;
     }
@@ -32,30 +35,36 @@ public abstract class FixtureBlockBase extends Block implements BlockEntityProvi
     }
 
     @Override
-    public FixtureBlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public FixtureBlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new FixtureBlockEntity(pos, state, engineType);
     }
 
     @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos,
-                                 PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient()) {
-            return ActionResult.SUCCESS;
+    protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos,
+                                 Player player, BlockHitResult hit) {
+        if (world.isClientSide()) {
+            return InteractionResult.SUCCESS;
         }
         if (world.getBlockEntity(pos) instanceof FixtureBlockEntity be) {
-            player.openHandledScreen(be);
+            player.openMenu(be);
         }
-        return ActionResult.CONSUME;
+        return InteractionResult.CONSUME;
     }
 
+
+    // Nothing ticks a block entity unless its block hands out a ticker, and
+    // without ticking FixtureBlockEntity never registers with the engine.
     @Override
-    protected void onStateReplaced(BlockState state, World world, BlockPos pos,
-                                   BlockState newState, boolean moved) {
-        if (!state.isOf(newState.getBlock())) {
-            if (world.getBlockEntity(pos) instanceof FixtureBlockEntity be) {
-                be.unregister();
-            }
-            super.onStateReplaced(state, world, pos, newState, moved);
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state,
+                                                                 BlockEntityType<T> type) {
+        if (level.isClientSide()) {
+            return null;
         }
+        return (l, pos, st, be) -> {
+            if (be instanceof FixtureBlockEntity fixture) {
+                fixture.tick();
+            }
+        };
     }
+
 }
