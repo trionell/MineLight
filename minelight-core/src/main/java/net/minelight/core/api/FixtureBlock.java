@@ -68,7 +68,7 @@ public final class FixtureBlock {
             return new PortMapping(name, side, Action.EMIT_EVENT, 0, 0, event);
         }
 
-        JsonObject toJson() {
+        public JsonObject toJson() {
             JsonObject o = new JsonObject();
             o.addProperty("name", name);
             o.addProperty("side", side.name());

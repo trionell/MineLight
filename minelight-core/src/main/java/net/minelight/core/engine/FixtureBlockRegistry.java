@@ -37,7 +37,45 @@ public final class FixtureBlockRegistry {
     private final Map<String, Integer> lastInput = new ConcurrentHashMap<>();
     /** Last feedback level (0–15) per blockId. */
     private final Map<Integer, Integer> feedback = new ConcurrentHashMap<>();
+    /** Live per-port telemetry for monitors, keyed the same as {@link #lastInput}. */
+    private final Map<String, PortState> portStates = new ConcurrentHashMap<>();
     private int nextId = 1;
+
+    /**
+     * What a single port is doing right now.
+     *
+     * <p>The registry already diffs every port each tick to decide whether to
+     * transmit; recording the result costs nothing and is the only place the
+     * raw redstone strength behind a DMX value is visible. Without it a
+     * monitor can show the level on the wire but not the input that caused
+     * it.</p>
+     */
+    public static final class PortState {
+        /** Redstone strength last read on the port's face, 0–15. */
+        volatile int raw;
+        /** Value last written to DMX by this port, 0–255. */
+        volatile int value;
+        /** Wall-clock time of the last change. */
+        volatile long changedAt;
+        /** How many times an EMIT_EVENT port has fired. */
+        volatile long fires;
+
+        public int raw() {
+            return raw;
+        }
+
+        public int value() {
+            return value;
+        }
+
+        public long changedAt() {
+            return changedAt;
+        }
+
+        public long fires() {
+            return fires;
+        }
+    }
 
     /**
      * @param engine the engine to route DMX and events through
@@ -60,6 +98,8 @@ public final class FixtureBlockRegistry {
 
     public boolean remove(int id) {
         feedback.remove(id);
+        portStates.keySet().removeIf(k -> k.startsWith(id + ":"));
+        lastInput.keySet().removeIf(k -> k.startsWith(id + ":"));
         return blocks.remove(id) != null;
     }
 
@@ -90,6 +130,74 @@ public final class FixtureBlockRegistry {
         return feedback.getOrDefault(blockId, 0);
     }
 
+    /** Live telemetry for one port, or null if it has never been ticked. */
+    public PortState portState(int blockId, String portName) {
+        return portStates.get(blockId + ":" + portName);
+    }
+
+    /**
+     * A monitoring snapshot: every block, its config, and its live values.
+     *
+     * <p>Port values are read back out of the merged DMX buffer rather than
+     * from the last write, so a channel a real desk is driving reads the
+     * level that would actually leave on the wire — which is the question a
+     * monitor is really asking.</p>
+     */
+    public JsonArray liveJson() {
+        Map<Integer, byte[]> dmx = engine.dmxSnapshot();
+        JsonArray arr = new JsonArray();
+        for (FixtureBlock b : blocks.values()) {
+            JsonObject o = b.toJson();
+            JsonArray ports = new JsonArray();
+            for (FixtureBlock.PortMapping port : b.ports()) {
+                JsonObject po = port.toJson();
+                PortState state = portStates.get(b.id() + ":" + port.name());
+                po.addProperty("raw", state == null ? 0 : state.raw());
+                po.addProperty("changedAt", state == null ? 0 : state.changedAt());
+                if (port.action() == FixtureBlock.Action.EMIT_EVENT) {
+                    po.addProperty("fires", state == null ? 0 : state.fires());
+                } else {
+                    po.addProperty("dmx", channelValue(dmx, port.universe(), port.channel()));
+                }
+                ports.add(po);
+            }
+            o.add("ports", ports);
+            if (b.type() == FixtureBlock.Type.FEEDBACK) {
+                o.addProperty("feedbackLevel", feedbackLevel(b.id()));
+            }
+            if (b.type() == FixtureBlock.Type.RGB) {
+                o.addProperty("color", rgbHex(b, dmx));
+            }
+            arr.add(o);
+        }
+        return arr;
+    }
+
+    private static int channelValue(Map<Integer, byte[]> dmx, int universe, int channel) {
+        byte[] buf = dmx.get(universe);
+        if (buf == null || channel < 1 || channel > buf.length) {
+            return 0;
+        }
+        return buf[channel - 1] & 0xFF;
+    }
+
+    /** The colour an RGB block's three channels currently add up to, as #rrggbb. */
+    private static String rgbHex(FixtureBlock b, Map<Integer, byte[]> dmx) {
+        int[] rgb = new int[3];
+        for (FixtureBlock.PortMapping port : b.ports()) {
+            int i = switch (port.name()) {
+                case "r" -> 0;
+                case "g" -> 1;
+                case "b" -> 2;
+                default -> -1;
+            };
+            if (i >= 0) {
+                rgb[i] = channelValue(dmx, port.universe(), port.channel());
+            }
+        }
+        return String.format("#%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
+    }
+
     /**
      * Advance one game tick.
      *
@@ -103,6 +211,7 @@ public final class FixtureBlockRegistry {
                 int raw = power.read(b.x(), b.y(), b.z(), port.side());
                 String key = b.id() + ":" + port.name();
                 Integer prev = lastInput.get(key);
+                PortState state = portStates.computeIfAbsent(key, k -> new PortState());
 
                 switch (port.action()) {
                     case SET_CHANNEL -> {
@@ -113,6 +222,9 @@ public final class FixtureBlockRegistry {
                                 break;
                             }
                             int value = raw * 255 / 15;
+                            state.raw = raw;
+                            state.value = value;
+                            state.changedAt = System.currentTimeMillis();
                             engine.setDmx(port.universe(), port.channel(), value);
                             emitBlockEvent("block.dmx", b, port, raw, value);
                         }
@@ -121,8 +233,11 @@ public final class FixtureBlockRegistry {
                         boolean on = raw > 0;
                         boolean was = prev != null && prev > 0;
                         if (on && !was) {
+                            state.fires++;
+                            state.changedAt = System.currentTimeMillis();
                             emitBlockEvent(port.event(), b, port, raw, raw * 255 / 15);
                         }
+                        state.raw = raw;
                         lastInput.put(key, raw);
                     }
                 }

@@ -66,6 +66,40 @@ public final class SoundEngine {
         double envelope;
         double runningAvg;
         boolean beatHigh;
+        /** Last sample fed in, before gain. */
+        volatile double lastLevel;
+        /** Last note seen by a NOTE block, -1 when none yet. */
+        volatile int lastNote = -1;
+        volatile String lastInstrument = "";
+        volatile long lastActivity;
+
+        public double envelope() {
+            return envelope;
+        }
+
+        public double runningAvg() {
+            return runningAvg;
+        }
+
+        public boolean beatHigh() {
+            return beatHigh;
+        }
+
+        public double lastLevel() {
+            return lastLevel;
+        }
+
+        public int lastNote() {
+            return lastNote;
+        }
+
+        public String lastInstrument() {
+            return lastInstrument;
+        }
+
+        public long lastActivity() {
+            return lastActivity;
+        }
 
         SoundBlock(int id, String name, Mode mode, int x, int y, int z) {
             this.id = id;
@@ -118,6 +152,10 @@ public final class SoundEngine {
             if (b.mode != Mode.NOTE || !inRange(b, x, y, z)) {
                 continue;
             }
+            b.lastNote = note;
+            b.lastInstrument = instrument;
+            b.lastActivity = System.currentTimeMillis();
+
             // pitch -> hue: map 0-24 across the colour wheel
             int[] rgb = pitchToRgb(note);
             engine.setDmx(b.universe, b.channel, rgb[0]);
@@ -147,6 +185,7 @@ public final class SoundEngine {
         if (b == null) {
             return;
         }
+        b.lastLevel = level;
         switch (b.mode) {
             case LEVEL -> processLevel(b, level);
             case BEAT -> processBeat(b, level);
@@ -176,6 +215,7 @@ public final class SoundEngine {
         boolean onset = v > b.runningAvg * b.beatThreshold && v > 0.15;
         if (onset && !b.beatHigh) {
             b.beatHigh = true;
+            b.lastActivity = System.currentTimeMillis();
             engine.setDmx(b.universe, b.channel, 255);
             emitSoundEvent("sound.beat", b, 255);
         } else if (!onset && b.beatHigh) {
@@ -263,6 +303,67 @@ public final class SoundEngine {
             return p + (q - p) * (2.0 / 3 - t) * 6;
         }
         return p;
+    }
+
+    // ---- monitoring -----------------------------------------------------------
+
+    /**
+     * A monitoring snapshot: config plus what each block is doing right now.
+     *
+     * <p>Output levels come from the merged DMX buffer, so this reports what
+     * would leave for a desk rather than what the analyzer last computed.</p>
+     */
+    public com.google.gson.JsonArray liveJson() {
+        Map<Integer, byte[]> dmx = engine.dmxSnapshot();
+        com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+        for (SoundBlock b : blocks.values()) {
+            com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            o.addProperty("id", b.id);
+            o.addProperty("name", b.name);
+            o.addProperty("mode", b.mode.name());
+            o.addProperty("x", b.x);
+            o.addProperty("y", b.y);
+            o.addProperty("z", b.z);
+            o.addProperty("radius", b.radius);
+            o.addProperty("universe", b.universe);
+            o.addProperty("channel", b.channel);
+            o.addProperty("gain", b.gain);
+            o.addProperty("decay", b.decay);
+            o.addProperty("beatThreshold", b.beatThreshold);
+            o.addProperty("level", b.lastLevel);
+            o.addProperty("envelope", b.envelope);
+            o.addProperty("runningAvg", b.runningAvg);
+            o.addProperty("beat", b.beatHigh);
+            o.addProperty("lastActivity", b.lastActivity);
+            if (b.mode == Mode.NOTE) {
+                o.addProperty("lastNote", b.lastNote);
+                o.addProperty("lastInstrument", b.lastInstrument);
+            }
+            // NOTE and SPECTRUM blocks write R/G/B from the base channel up;
+            // the others use a single channel.
+            int width = b.mode == Mode.NOTE || b.mode == Mode.SPECTRUM ? 3 : 1;
+            com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+            for (int i = 0; i < width; i++) {
+                out.add(channelValue(dmx, b.universe, b.channel + i));
+            }
+            o.add("dmx", out);
+            if (width == 3) {
+                o.addProperty("color", String.format("#%02x%02x%02x",
+                        channelValue(dmx, b.universe, b.channel),
+                        channelValue(dmx, b.universe, b.channel + 1),
+                        channelValue(dmx, b.universe, b.channel + 2)));
+            }
+            arr.add(o);
+        }
+        return arr;
+    }
+
+    private static int channelValue(Map<Integer, byte[]> dmx, int universe, int channel) {
+        byte[] buf = dmx.get(universe);
+        if (buf == null || channel < 1 || channel > buf.length) {
+            return 0;
+        }
+        return buf[channel - 1] & 0xFF;
     }
 
     // ---- persistence ---------------------------------------------------------
