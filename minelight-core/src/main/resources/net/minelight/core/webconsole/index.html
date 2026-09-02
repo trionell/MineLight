@@ -44,6 +44,7 @@
   .chan .bar i { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(180deg,var(--accent),#7a2d00); }
   .chan .rs { position:absolute; top:6px; right:6px; width:10px; height:10px; border-radius:2px; background:#333; }
   .chan .rs.on { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .chan .meta { font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .row { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
   button, input, select, textarea {
     background:var(--panel-2); color:var(--text); border:1px solid var(--border);
@@ -284,12 +285,13 @@ function render() {
 }
 
 function renderCounts() {
-  const online = (state.devices || []).filter(d => d.running).length;
+  const devices = state.devices || [];
+  const online = devices.filter(d => d.running).length;
   document.getElementById('counts').innerHTML =
     `fixtures <b>${(state.patch.fixtures || []).length}</b> · ` +
     `blocks <b>${(state.blocks || []).length}</b> · ` +
     `sound <b>${(state.sound || []).length}</b> · ` +
-    `devices <b>${online}</b>`;
+    `devices <b>${online}/${devices.length}</b>`;
 }
 
 /* ---- patch ---- */
@@ -310,7 +312,8 @@ function renderFixtures() {
       <input type="range" min="0" max="255" value="0" style="width:100%"
         data-slider="${f.id}"
         oninput="onSlider(${f.id}, this.value)">
-      <div style="font-size:10px;color:var(--muted)">u${f.universe}.${f.address} ${esc(f.kind)}</div>`;
+      <div class="meta">u${f.universe}.${f.address} · ${esc(f.mode)}</div>
+      <div class="meta">${f.x}, ${f.y}, ${f.z} · ${esc(f.kind)}</div>`;
     grid.appendChild(div);
   }
   renderLevels();
@@ -446,12 +449,13 @@ function renderDevices() {
   for (const d of (state.devices || [])) {
     const card = document.createElement('div');
     card.className = 'card';
+    const fields = deviceFields(d);
     card.innerHTML = `
       <div class="head">
         <div class="title">${esc(d.name)}</div>
         <span class="tag">${d.running ? 'RUNNING' : 'IDLE'}</span>
       </div>
-      <div class="kv">${deviceFields(d)}</div>
+      ${fields ? `<div class="kv">${fields}</div>` : ''}
       ${peerTable(d.peers)}`;
     host.appendChild(card);
   }
