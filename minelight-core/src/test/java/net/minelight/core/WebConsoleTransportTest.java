@@ -38,6 +38,19 @@ class WebConsoleTransportTest {
         }
     }
 
+    /**
+     * Consume the one full push a client gets after connecting.
+     *
+     * <p>The change cache starts empty, so the first tick with a listener
+     * attached reports every section once. After that only differences go
+     * out.</p>
+     */
+    private static JsonObject readCatchUp(BufferedReader r) throws IOException {
+        JsonObject o = readEvent(r);
+        assertEquals("live", o.get("type").getAsString());
+        return o;
+    }
+
     private static JsonObject readEvent(BufferedReader r) throws IOException {
         String line;
         while ((line = r.readLine()) != null) {
@@ -115,6 +128,67 @@ class WebConsoleTransportTest {
                         "only events newer than the state message, in order");
                 assertEquals(222, live.getAsJsonObject("dmx").getAsJsonArray("1")
                         .get(0).getAsInt(), "live push carries DMX");
+            }
+        } finally {
+            engine.stop();
+        }
+    }
+
+    @Test
+    void anIdleShowSendsNothing() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("minelight-idle"));
+        int port = freePort();
+        engine.registerServer(new WebConsoleServer(engine, port));
+        engine.start();
+        try {
+            FixtureBlock block = engine.blocks().add(FixtureBlock.Type.DIMMER, "Key", 0, 0, 0);
+            block.setPort("in", FixtureBlock.PortMapping.channel("in", FixtureBlock.Side.ANY, 1, 1));
+            engine.blocks().tick((x, y, z, side) -> 15);
+
+            HttpURLConnection conn = (HttpURLConnection) URI
+                    .create("http://127.0.0.1:" + port + "/events").toURL().openConnection();
+            conn.setReadTimeout(1500);
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                assertEquals("state", readEvent(r).get("type").getAsString());
+                readCatchUp(r);
+
+                // The panel rebuilds a DOM subtree per section it receives, so
+                // a quiet show has to stay quiet on the wire. Peer ages in
+                // particular must not tick, or devices would push every second.
+                assertThrows(java.net.SocketTimeoutException.class, () -> readEvent(r),
+                        "nothing changed, so nothing should be pushed");
+            }
+        } finally {
+            engine.stop();
+        }
+    }
+
+    @Test
+    void pushesOnlyTheSectionThatChanged() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("minelight-delta"));
+        int port = freePort();
+        engine.registerServer(new WebConsoleServer(engine, port));
+        engine.start();
+        try {
+            FixtureBlock block = engine.blocks().add(FixtureBlock.Type.DIMMER, "Key", 0, 0, 0);
+            block.setPort("in", FixtureBlock.PortMapping.channel("in", FixtureBlock.Side.ANY, 1, 1));
+
+            HttpURLConnection conn = (HttpURLConnection) URI
+                    .create("http://127.0.0.1:" + port + "/events").toURL().openConnection();
+            conn.setReadTimeout(5000);
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                readEvent(r);
+                readCatchUp(r);
+
+                engine.setDmx(1, 400, 128); // a channel no block or fixture reads
+
+                JsonObject live = readEvent(r);
+                assertEquals("live", live.get("type").getAsString());
+                assertTrue(live.has("dmx"), "the changed section is sent");
+                assertFalse(live.has("sound"), "an unchanged section is not");
+                assertFalse(live.has("redstone"), "an unchanged section is not");
             }
         } finally {
             engine.stop();

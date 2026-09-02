@@ -211,7 +211,9 @@ class MonitoringTest {
         assertEquals(2, arr.size());
         JsonObject first = arr.get(0).getAsJsonObject();
         assertTrue(first.has("address"));
-        assertTrue(first.has("ageMs"));
+        // an absolute stamp, not an age that would differ on every poll
+        assertTrue(first.has("lastSeen"));
+        assertFalse(first.has("ageMs"));
 
         long total = 0;
         for (var el : arr) {
