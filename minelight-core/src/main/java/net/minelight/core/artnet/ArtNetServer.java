@@ -38,14 +38,16 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
     private static final int OP_POLL = 0x2000;
     private static final int OP_POLL_REPLY = 0x2100;
     private static final int OP_DMX = 0x5000;
+    /** Art-Net allows 32768 port-addresses; remember only a sane handful. */
+    private static final int MAX_TRACKED_UNIVERSES = 64;
 
     private final ConsoleEngine engine;
     private final String bindAddress;
     private final boolean inputEnabled;
     private final java.util.Set<Integer> outputUniverses = ConcurrentHashMap.newKeySet();
     private final PeerTracker peers = new PeerTracker();
-    /** Last inbound frame per universe, so monitors can show what a desk sends. */
-    private final Map<Integer, byte[]> inbound = new ConcurrentHashMap<>();
+    /** Universes a desk has sent us frames on, capped so a scan cannot grow it. */
+    private final java.util.Set<Integer> inputUniverses = ConcurrentHashMap.newKeySet();
 
     private DatagramSocket socket;
     private ScheduledExecutorService tx;
@@ -170,16 +172,10 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         outputUniverses.stream().sorted().forEach(uni::add);
         o.add("outputUniverses", uni);
         com.google.gson.JsonArray in = new com.google.gson.JsonArray();
-        inbound.keySet().stream().sorted().forEach(in::add);
+        inputUniverses.stream().sorted().forEach(in::add);
         o.add("inputUniverses", in);
         o.add("peers", peers.toJson());
         return o;
-    }
-
-    /** The most recent frame received on a universe from a real desk, or null. */
-    public byte[] inboundFrame(int universe) {
-        byte[] f = inbound.get(universe);
-        return f == null ? null : f.clone();
     }
 
     // ---- input ---------------------------------------------------------
@@ -234,9 +230,9 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         int dmxLen = ((data[16] & 0xFF) << 8) | (data[17] & 0xFF);
         dmxLen = Math.min(dmxLen, Math.min(512, len - 18));
         peers.seen(from, fromPort, "ArtDmx u" + universe);
-        byte[] frame = new byte[512];
-        System.arraycopy(data, 18, frame, 0, dmxLen);
-        inbound.put(universe, frame);
+        if (inputUniverses.size() < MAX_TRACKED_UNIVERSES) {
+            inputUniverses.add(universe);
+        }
         Map<String, Object> ev = new java.util.HashMap<>();
         ev.put("universe", universe);
         // pass first few channels for scripting convenience
