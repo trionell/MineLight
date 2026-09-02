@@ -45,6 +45,7 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
     private final String bindAddress;
     private final boolean inputEnabled;
     private final java.util.Set<Integer> outputUniverses = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<Integer> suppressed = ConcurrentHashMap.newKeySet();
     private final PeerTracker peers = new PeerTracker();
     /** Universes a desk has sent us frames on, capped so a scan cannot grow it. */
     private final java.util.Set<Integer> inputUniverses = ConcurrentHashMap.newKeySet();
@@ -74,12 +75,31 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         return ARTNET_PORT;
     }
 
+    /** Always transmit this universe, even when every channel is zero. */
     public void enableUniverse(int u) {
         outputUniverses.add(u);
+        suppressed.remove(u);
     }
 
+    /** Never transmit this universe, even if the engine is driving it. */
     public void disableUniverse(int u) {
         outputUniverses.remove(u);
+        suppressed.add(u);
+    }
+
+    /**
+     * Universes to put on the wire.
+     *
+     * <p>Anything the engine is driving is transmitted, not only what was
+     * enabled up front. A block retargeted to universe 4 in the in-game GUI
+     * would otherwise write to a buffer nothing ever sent, and the desk would
+     * sit dark with no indication why.</p>
+     */
+    private java.util.Set<Integer> universesToSend() {
+        java.util.Set<Integer> out = new java.util.TreeSet<>(outputUniverses);
+        out.addAll(engine.dmxSnapshot().keySet());
+        out.removeAll(suppressed);
+        return out;
     }
 
     @Override
@@ -134,7 +154,7 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
             return;
         }
         Map<Integer, byte[]> snap = engine.dmxSnapshot();
-        for (int universe : outputUniverses) {
+        for (int universe : universesToSend()) {
             byte[] data = snap.get(universe);
             if (data == null) {
                 data = new byte[512];
@@ -149,16 +169,26 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         }
     }
 
+    /**
+     * Build an ArtDmx packet.
+     *
+     * <p>Art-Net is mixed-endian and the fields do not agree with each other,
+     * so every one is written explicitly. The Port-Address in particular is
+     * split low byte first — byte 14 carries Subnet and Universe, byte 15
+     * carries Net — which is the opposite of the length field two bytes
+     * later.</p>
+     */
     private byte[] buildArtDmx(int universe, byte[] dmx) {
         ByteBuffer b = ByteBuffer.allocate(18 + dmx.length).order(ByteOrder.LITTLE_ENDIAN);
         b.put(ARTNET_HEADER);
-        b.putShort((short) OP_DMX);          // OpCode (little endian on wire)
+        b.putShort((short) OP_DMX);              // OpCode, low byte first
         b.order(ByteOrder.BIG_ENDIAN);
-        b.putShort((short) 14);              // Protocol version
-        b.put((byte) 0);                     // Sequence (0 = disabled)
-        b.put((byte) 0);                     // Physical
-        b.putShort((short) (universe & 0x7FFF)); // Port-Address
-        b.putShort((short) dmx.length);      // Length (big endian)
+        b.putShort((short) 14);                  // ProtVerHi, ProtVerLo
+        b.put((byte) 0);                         // Sequence (0 = disabled)
+        b.put((byte) 0);                         // Physical
+        b.put((byte) (universe & 0xFF));         // SubUni: subnet + universe
+        b.put((byte) ((universe >> 8) & 0x7F));  // Net
+        b.putShort((short) dmx.length);          // LengthHi, LengthLo
         b.put(dmx);
         return b.array();
     }
@@ -169,7 +199,7 @@ public final class ArtNetServer implements ProtocolServer, ConsoleEngine.DmxList
         o.addProperty("input", inputEnabled);
         o.addProperty("bind", bindAddress);
         com.google.gson.JsonArray uni = new com.google.gson.JsonArray();
-        outputUniverses.stream().sorted().forEach(uni::add);
+        universesToSend().forEach(uni::add);
         o.add("outputUniverses", uni);
         com.google.gson.JsonArray in = new com.google.gson.JsonArray();
         inputUniverses.stream().sorted().forEach(in::add);
