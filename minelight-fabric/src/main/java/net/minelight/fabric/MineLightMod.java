@@ -12,6 +12,7 @@ import net.minelight.core.osc.OscServer;
 import net.minelight.core.sacn.SacnServer;
 import net.minelight.core.webconsole.WebConsoleServer;
 import net.minelight.fabric.block.ModBlocks;
+import net.minelight.fabric.block.ModItemGroups;
 import net.minelight.fabric.blockentity.ModBlockEntities;
 import net.minelight.fabric.network.ModNetworking;
 import net.minelight.fabric.screen.ModScreenHandlers;
@@ -54,6 +55,7 @@ public final class MineLightMod implements ModInitializer {
 
         // blocks, block entities, screens
         ModBlocks.register();
+        ModItemGroups.register();
         ModBlockEntities.register();
         ModScreenHandlers.register();
         ModNetworking.registerPayloads();

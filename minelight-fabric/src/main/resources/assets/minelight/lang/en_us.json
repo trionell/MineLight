@@ -3,6 +3,7 @@
   "block.minelight.rgb_block": "RGB Fixture",
   "block.minelight.event_block": "Event Fixture",
   "block.minelight.feedback_block": "Feedback Fixture",
+  "itemGroup.minelight.fixtures": "MineLight",
   "key.minelight.console": "Open MineLight Console",
   "category.minelight": "MineLight",
   "block.minelight.note_fixture_block": "Note Fixture",
