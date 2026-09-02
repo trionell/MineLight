@@ -53,6 +53,9 @@ public final class WebConsoleServer implements ProtocolServer {
     /** How long to trust a MIDI device enumeration before asking the OS again. */
     private static final long MIDI_CACHE_MS = 5000;
 
+    /** Idle gap after which a session is proven alive with an SSE comment. */
+    private static final long KEEPALIVE_MS = 15_000;
+
     private static final Gson GSON = new Gson();
 
     private final ConsoleEngine engine;
@@ -64,6 +67,15 @@ public final class WebConsoleServer implements ProtocolServer {
     private List<String> midiInputs;
     private long midiInputsAt;
     private long lastDeviceBroadcast;
+    /**
+     * Last JSON broadcast per section, so unchanged sections are not resent.
+     *
+     * <p>Deliberately not primed when a client connects. A new client's state
+     * message is current by construction, so at worst it receives one
+     * redundant update; priming from it would instead convince the pump that
+     * a change already went out and leave every older client stale.</p>
+     */
+    private final Map<String, String> lastSent = new ConcurrentHashMap<>();
 
     public WebConsoleServer(ConsoleEngine engine) {
         this(engine, WEB_PORT);
@@ -235,9 +247,7 @@ public final class WebConsoleServer implements ProtocolServer {
         o.addProperty("type", "state");
         o.add("patch", engine.patch().toJson());
         o.add("dmx", dmxJson());
-        JsonObject redstone = new JsonObject();
-        engine.redstoneSnapshot().forEach((id, on) -> redstone.addProperty(String.valueOf(id), on));
-        o.add("redstone", redstone);
+        o.add("redstone", redstoneJson());
         JsonArray presets = new JsonArray();
         engine.presets().keySet().forEach(presets::add);
         o.add("presets", presets);
@@ -312,8 +322,15 @@ public final class WebConsoleServer implements ProtocolServer {
     }
 
     /**
-     * Push telemetry that the DMX pump does not already carry: block and
-     * sound-block runtime values, device status, and new events.
+     * Push whatever has changed since the last tick.
+     *
+     * <p>Sections are compared against what was last broadcast and omitted
+     * when identical, so an idle show sends nothing at all. This is not just
+     * bandwidth: the panel rebuilds a DOM subtree for every section it
+     * receives, and a page that mutates ten times a second keeps every
+     * MutationObserver in the browser — including the ones browser extensions
+     * install on each page — busy scanning it. That was costing far more CPU
+     * than the console itself.</p>
      */
     private void pushLive() {
         if (sessions.isEmpty()) {
@@ -322,24 +339,23 @@ public final class WebConsoleServer implements ProtocolServer {
         try {
             JsonObject o = new JsonObject();
             o.addProperty("type", "live");
-            o.add("dmx", dmxJson());
-            o.add("blocks", engine.blocks().liveJson());
-            o.add("sound", engine.sound().liveJson());
-            JsonObject redstone = new JsonObject();
-            engine.redstoneSnapshot().forEach((id, on) -> redstone.addProperty(String.valueOf(id), on));
-            o.add("redstone", redstone);
+            boolean any = false;
+            any |= addIfChanged(o, "dmx", dmxJson());
+            any |= addIfChanged(o, "blocks", engine.blocks().liveJson());
+            any |= addIfChanged(o, "sound", engine.sound().liveJson());
+            any |= addIfChanged(o, "redstone", redstoneJson());
 
             long now = System.currentTimeMillis();
             if (now - lastDeviceBroadcast >= DEVICE_INTERVAL_MS) {
-                o.add("devices", devicesJson());
                 lastDeviceBroadcast = now;
+                any |= addIfChanged(o, "devices", devicesJson());
             }
 
             // Each client is at its own point in the event log — one that
             // connected a moment ago must not be sent the backlog its state
             // message already carried — so events are appended per session.
             long last = engine.eventLog().lastSeq();
-            String shared = GSON.toJson(o);
+            String shared = any ? GSON.toJson(o) : null;
             for (StreamSession s : sessions) {
                 if (last > s.sentSeq) {
                     JsonObject withEvents = o.deepCopy();
@@ -350,13 +366,39 @@ public final class WebConsoleServer implements ProtocolServer {
                     withEvents.add("events", events);
                     s.sentSeq = last;
                     s.send(GSON.toJson(withEvents));
-                } else {
+                } else if (shared != null) {
                     s.send(shared);
+                } else if (now - s.lastWrite >= KEEPALIVE_MS) {
+                    // Nothing to say, but a silent socket is indistinguishable
+                    // from a dead one. A comment keeps the connection proven
+                    // without waking the page's onmessage handler.
+                    s.comment();
                 }
             }
         } catch (Exception ignored) {
             // a monitor must never take the engine down with it
         }
+    }
+
+    /**
+     * Add a section only when it differs from the last one broadcast.
+     *
+     * @return whether the section was added
+     */
+    private boolean addIfChanged(JsonObject target, String key, com.google.gson.JsonElement value) {
+        String json = GSON.toJson(value);
+        if (json.equals(lastSent.get(key))) {
+            return false;
+        }
+        lastSent.put(key, json);
+        target.add(key, value);
+        return true;
+    }
+
+    private JsonObject redstoneJson() {
+        JsonObject redstone = new JsonObject();
+        engine.redstoneSnapshot().forEach((id, on) -> redstone.addProperty(String.valueOf(id), on));
+        return redstone;
     }
 
     private void onClientMessage(JsonObject msg) {
@@ -460,6 +502,8 @@ public final class WebConsoleServer implements ProtocolServer {
         private final OutputStream out;
         /** Highest event sequence this client has been sent. */
         volatile long sentSeq;
+        /** When anything was last written, for keepalives. */
+        volatile long lastWrite = System.currentTimeMillis();
         private final java.util.concurrent.CountDownLatch closed =
                 new java.util.concurrent.CountDownLatch(1);
 
@@ -488,6 +532,21 @@ public final class WebConsoleServer implements ProtocolServer {
                 out.write(("data: " + json.replace("\n", " ") + "\n\n")
                         .getBytes(StandardCharsets.UTF_8));
                 out.flush();
+                lastWrite = System.currentTimeMillis();
+            } catch (IOException e) {
+                close();
+            }
+        }
+
+        /** An SSE comment: proves the socket without delivering an event. */
+        synchronized void comment() {
+            if (closed.getCount() == 0) {
+                return;
+            }
+            try {
+                out.write(": ping\n\n".getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                lastWrite = System.currentTimeMillis();
             } catch (IOException e) {
                 close();
             }

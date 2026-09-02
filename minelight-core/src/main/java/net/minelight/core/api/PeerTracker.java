@@ -112,8 +112,10 @@ public final class PeerTracker {
             JsonObject o = new JsonObject();
             o.addProperty("address", p.address());
             o.addProperty("packets", p.packets());
+            // Absolute, not an age: a value that ticks every second would make
+            // this payload differ on every poll, and monitors that only send
+            // what changed would then never go quiet.
             o.addProperty("lastSeen", p.lastSeen());
-            o.addProperty("ageMs", age);
             o.addProperty("detail", p.lastDetail());
             arr.add(o);
         }
