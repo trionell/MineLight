@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "minelight:block/note_fixture_block"
+  }
+}
