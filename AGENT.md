@@ -9,7 +9,7 @@ is planned and what is done.
   and the only module with tests. Patch, DMX merge, protocol servers (Art-Net, sACN,
   OSC, HTTP, MQTT), the Lua trigger engine, and the WebConsole.
 - **`minelight-fabric`** — the Minecraft mod. Blocks, block entities, screens,
-  networking, and the bridges that feed the engine each server tick.
+  networking, one mixin, and the bridges that feed the engine each server tick.
 
 Keep engine logic in core. Anything testable without Minecraft belongs there, and that
 is what makes the project verifiable at all.
@@ -17,7 +17,7 @@ is what makes the project verifiable at all.
 ## Build and test
 
 ```bash
-./gradlew :minelight-core:test        # 52 tests, the real safety net
+./gradlew :minelight-core:test        # 59 tests, the real safety net
 ./gradlew :minelight-fabric:build     # produces the installable jar
 ```
 
@@ -52,6 +52,12 @@ Each of these has already cost real time. They are not obvious from the code.
   nested into the mod jar or it fails with `NoClassDefFoundError` in game.
 - **`ServerLifecycleEvents.SERVER_STARTED` runs on every world load** in the same
   process, and things registered inside it accumulate. See ROADMAP.
+- **Mixins here carry no refmap.** Minecraft ships unobfuscated and nothing is remapped,
+  so `@Mixin` targets are written with Mojang names and real descriptors and are used
+  verbatim at runtime. Copy the descriptor out of `javap -s` rather than typing it: a
+  wrong one fails at load, which `"required": true` turns into a crash instead of a
+  silent no-op. `run/logs/debug.log` prints a `Mixing … into …` line for every mixin
+  that actually applied — the two `compatibilityLevel` complaints next to it are noise.
 
 ## Verifying
 

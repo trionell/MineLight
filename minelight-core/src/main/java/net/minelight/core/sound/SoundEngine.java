@@ -5,20 +5,25 @@ import net.minelight.core.engine.ConsoleEngine;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.DoubleAdder;
 
 /**
  * Sound-to-light engine.
  *
  * <p>The console-agnostic half of MineLight's sound-reactive blocks. It does
- * not touch Minecraft audio itself — the Fabric bridge feeds it two kinds of
- * input:</p>
+ * not touch Minecraft audio itself — the Fabric bridge feeds it the sound
+ * events the server originates:</p>
  *
  * <ul>
- *   <li><b>Discrete note events</b> from note blocks ({@link #onNote}) —
- *       pitch + instrument.</li>
- *   <li><b>Amplitude samples</b> from sound-meter / beat / spectrum blocks
- *       ({@link #onSample}) — a 0–1 level, optionally split into
- *       bass/mid/treble bands.</li>
+ *   <li><b>Positional sounds</b> ({@link #onSound}) — a name, a position, a
+ *       volume and a pitch. Every block acts as a microphone at its own
+ *       position: a sound is attenuated by its distance to the block, gated
+ *       by the block's {@code radius}, and summed with everything else heard
+ *       during the same tick.</li>
+ *   <li><b>Discrete note events</b> ({@link #onNote}) — pitch + instrument,
+ *       derived from note-block sounds.</li>
+ *   <li><b>Raw amplitude samples</b> ({@link #onSample}) — a 0–1 level and
+ *       bands, for feeding the analyzers directly.</li>
  * </ul>
  *
  * <p>Each registered sound block runs its input through an analyzer and writes
@@ -80,6 +85,17 @@ public final class SoundEngine {
         double envelope;
         double runningAvg;
         boolean beatHigh;
+        /**
+         * Energy heard since the last tick, summed as power so that two
+         * sounds of equal level add to about 1.4x rather than 2x. Drained
+         * and rooted back into an amplitude by {@link #tick()}.
+         */
+        final DoubleAdder energy = new DoubleAdder();
+        final DoubleAdder bassEnergy = new DoubleAdder();
+        final DoubleAdder midEnergy = new DoubleAdder();
+        final DoubleAdder trebleEnergy = new DoubleAdder();
+        /** Last value announced on the event bus, to keep silence quiet. */
+        int lastEmitted = -1;
         /** Last sample fed in, before gain. */
         volatile double lastLevel;
         /** Last note seen by a NOTE block, -1 when none yet. */
@@ -188,6 +204,59 @@ public final class SoundEngine {
         }
     }
 
+    // ---- input: positional sounds -------------------------------------------
+
+    /**
+     * A sound the server just played into the world.
+     *
+     * <p>Every block is a microphone standing at its own position. The sound
+     * is attenuated linearly over its own audible range — the same rolloff
+     * the client uses — and dropped entirely beyond the block's
+     * {@code radius}, so where a block is placed decides what it hears.</p>
+     *
+     * <p>Volume above 1 buys range rather than level: that is what Minecraft
+     * does with it, and it stops a distant explosion from pinning every meter
+     * on the server.</p>
+     *
+     * @param name   sound event id, e.g. {@code block.note_block.harp}
+     * @param volume the volume the sound was played at (may exceed 1)
+     * @param pitch  playback pitch multiplier, 1.0 for unshifted
+     * @param range  how far the sound carries, in blocks
+     */
+    public void onSound(double x, double y, double z,
+                        String name, double volume, double pitch, double range) {
+        if (range <= 0 || volume <= 0) {
+            return;
+        }
+        // A note block is both a note and a sound: NOTE blocks get the pitch
+        // and instrument, everything else just hears it.
+        int noteBlock = name == null ? -1 : name.indexOf("note_block.");
+        if (noteBlock >= 0) {
+            onNote((int) Math.floor(x), (int) Math.floor(y), (int) Math.floor(z),
+                    SoundSpectrum.noteFromPitch(pitch),
+                    name.substring(noteBlock + "note_block.".length()));
+        }
+
+        double[] bands = SoundSpectrum.bandWeights(SoundSpectrum.frequency(name, pitch));
+        double amplitude = Math.min(1.0, volume);
+        for (SoundBlock b : blocks.values()) {
+            if (b.mode == Mode.NOTE) {
+                continue;
+            }
+            double dx = x - (b.x + 0.5), dy = y - (b.y + 0.5), dz = z - (b.z + 0.5);
+            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist > b.radius || dist >= range) {
+                continue;
+            }
+            double level = amplitude * (1.0 - dist / range);
+            double power = level * level;
+            b.energy.add(power);
+            b.bassEnergy.add(power * bands[0]);
+            b.midEnergy.add(power * bands[1]);
+            b.trebleEnergy.add(power * bands[2]);
+        }
+    }
+
     // ---- input: amplitude samples -------------------------------------------
 
     /**
@@ -199,7 +268,14 @@ public final class SoundEngine {
         if (b == null) {
             return;
         }
+        process(b, level, bass, mid, treble);
+    }
+
+    private void process(SoundBlock b, double level, double bass, double mid, double treble) {
         b.lastLevel = level;
+        if (level > 0.01) {
+            b.lastActivity = System.currentTimeMillis();
+        }
         switch (b.mode) {
             case LEVEL -> processLevel(b, level);
             case BEAT -> processBeat(b, level);
@@ -220,13 +296,16 @@ public final class SoundEngine {
         }
         int value = (int) Math.round(b.envelope * 255);
         engine.setDmx(b.universe, b.channel, value);
-        emitSoundEvent("sound.level", b, value);
+        emitLevelChange("sound.level", b, value);
     }
 
     private void processBeat(SoundBlock b, double level) {
         double v = clamp01(level * b.gain);
-        b.runningAvg = b.runningAvg == 0 ? v : b.runningAvg * 0.9 + v * 0.1;
+        // Compare against the average as it stood *before* this sample.
+        // Seeding the average with the first sample made a lone transient
+        // measure itself, so the first hit after a quiet start was swallowed.
         boolean onset = v > b.runningAvg * b.beatThreshold && v > 0.15;
+        b.runningAvg = b.runningAvg * 0.9 + v * 0.1;
         if (onset && !b.beatHigh) {
             b.beatHigh = true;
             b.lastActivity = System.currentTimeMillis();
@@ -245,17 +324,61 @@ public final class SoundEngine {
         engine.setDmx(b.universe, b.channel, r);
         engine.setDmx(b.universe, b.channel + 1, g);
         engine.setDmx(b.universe, b.channel + 2, bl);
-        emitSoundEvent("sound.spectrum", b, (r + g + bl) / 3);
+        emitLevelChange("sound.spectrum", b, (r + g + bl) / 3);
     }
 
-    /** Advance one game tick — decay envelopes for LEVEL blocks. */
+    /**
+     * Advance one game tick: mix everything each block heard since the last
+     * one and run it through that block's analyzer.
+     *
+     * <p>This is the only place LEVEL envelopes advance. They used to decay
+     * here <em>and</em> in {@code processLevel}, which halved every decay
+     * time the user set.</p>
+     */
     public void tick() {
         for (SoundBlock b : blocks.values()) {
-            if (b.mode == Mode.LEVEL && b.envelope > 0) {
-                b.envelope = Math.max(0, b.envelope - b.decay);
-                engine.setDmx(b.universe, b.channel, (int) Math.round(b.envelope * 255));
+            if (b.mode == Mode.NOTE) {
+                continue;
             }
+            double level = b.energy.sumThenReset();
+            double bass = b.bassEnergy.sumThenReset();
+            double mid = b.midEnergy.sumThenReset();
+            double treble = b.trebleEnergy.sumThenReset();
+            if (level == 0 && atRest(b)) {
+                continue;
+            }
+            process(b, Math.sqrt(level), Math.sqrt(bass), Math.sqrt(mid), Math.sqrt(treble));
         }
+    }
+
+    /**
+     * Whether a silent block has finished settling. A block that hears nothing
+     * and has nothing left to decay writes no DMX and emits no events, so a
+     * show with no sound in it costs nothing.
+     */
+    private static boolean atRest(SoundBlock b) {
+        return switch (b.mode) {
+            case LEVEL -> b.envelope <= 0;
+            case SPECTRUM -> b.lastEmitted <= 0;
+            // BEAT only writes on an edge, but its baseline still has to fall
+            // during silence or the next hit measures against a stale average.
+            case BEAT -> !b.beatHigh && b.runningAvg <= 0.001;
+            case NOTE -> true;
+        };
+    }
+
+    /**
+     * Announce a level, but only when it moved. Silence is the common case —
+     * a block hears nothing most ticks — so a held value emits nothing rather
+     * than pushing an identical event onto the bus 20 times a second. BEAT
+     * does not come through here: it emits on its own rising edge.
+     */
+    private void emitLevelChange(String kind, SoundBlock b, int value) {
+        if (b.lastEmitted == value) {
+            return;
+        }
+        b.lastEmitted = value;
+        emitSoundEvent(kind, b, value);
     }
 
     private void emitSoundEvent(String kind, SoundBlock b, int value) {

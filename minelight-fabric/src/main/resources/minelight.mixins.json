@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "net.minelight.fabric.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ServerLevelSoundMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

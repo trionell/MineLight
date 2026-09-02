@@ -12,6 +12,9 @@
   "license": "GPL-3.0-or-later",
   "icon": "assets/minelight/icon.png",
   "environment": "*",
+  "mixins": [
+    "minelight.mixins.json"
+  ],
   "entrypoints": {
     "main": [
       "net.minelight.fabric.MineLightMod"
