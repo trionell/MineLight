@@ -26,9 +26,9 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Serves a single-page app at {@code http://<host>:8090/} with a channel
  * grid, preset buttons, cue-list GO, and a Lua script editor. Streams live
- * DMX and redstone state over a WebSocket at {@code /ws} so the panel is
- * always in sync with the game and with any real console connected via
- * Art-Net / sACN.</p>
+ * DMX and redstone state as Server-Sent Events at {@code /events} so the
+ * panel is always in sync with the game and with any real console connected
+ * via Art-Net / sACN; the panel posts commands back to {@code /command}.</p>
  *
  * <p>It is also the monitor: alongside the patch it streams every placed
  * fixture and sound block with its live values, the status of each protocol
@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
  * Titan, anything you build in the browser translates directly to the real
  * console later.</p>
  */
-public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.DmxListener {
+public final class WebConsoleServer implements ProtocolServer {
 
     public static final int WEB_PORT = 8090;
 
@@ -57,15 +57,13 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
 
     private final ConsoleEngine engine;
     private final int port;
-    private final java.util.Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<StreamSession> sessions = ConcurrentHashMap.newKeySet();
 
     private HttpServer server;
     private ScheduledExecutorService live;
     private List<String> midiInputs;
     private long midiInputsAt;
     private long lastDeviceBroadcast;
-    /** Highest event sequence already pushed to clients. */
-    private long sentSeq;
 
     public WebConsoleServer(ConsoleEngine engine) {
         this(engine, WEB_PORT);
@@ -98,11 +96,10 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
             return t;
         }));
         server.createContext("/", this::handleStatic);
-        server.createContext("/ws", this::handleWebSocket);
+        server.createContext("/events", this::handleEvents);
+        server.createContext("/command", this::handleCommand);
         server.start();
-        engine.addDmxListener(this);
 
-        sentSeq = engine.eventLog().lastSeq();
         live = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "minelight-webconsole-live");
             t.setDaemon(true);
@@ -117,6 +114,10 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
             live.shutdownNow();
             live = null;
         }
+        for (StreamSession s : sessions) {
+            s.close();
+        }
+        sessions.clear();
         if (server != null) {
             server.stop(0);
             server = null;
@@ -126,6 +127,21 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
     @Override
     public boolean isRunning() {
         return server != null;
+    }
+
+    @Override
+    public JsonObject status() {
+        JsonObject o = ProtocolServer.super.status();
+        o.addProperty("port", port);
+        JsonArray clients = new JsonArray();
+        for (StreamSession s : sessions) {
+            JsonObject c = new JsonObject();
+            c.addProperty("address", s.address());
+            c.addProperty("detail", "watching");
+            clients.add(c);
+        }
+        o.add("peers", clients);
+        return o;
     }
 
     // ---- static files -----------------------------------------------------
@@ -154,42 +170,63 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
         }
     }
 
-    // ---- websocket --------------------------------------------------------
+    // ---- event stream -----------------------------------------------------
 
-    private void handleWebSocket(HttpExchange ex) throws IOException {
-        // Minimal RFC 6455 handshake (no external deps)
-        String key = ex.getRequestHeaders().getFirst("Sec-WebSocket-Key");
-        if (key == null) {
-            ex.sendResponseHeaders(400, -1);
-            return;
-        }
-        String accept = websocketAccept(key);
-        ex.getResponseHeaders().set("Upgrade", "websocket");
-        ex.getResponseHeaders().set("Connection", "Upgrade");
-        ex.getResponseHeaders().set("Sec-WebSocket-Accept", accept);
-        ex.sendResponseHeaders(101, -1);
+    /**
+     * The live feed, as Server-Sent Events.
+     *
+     * <p>Not a WebSocket: {@code com.sun.net.httpserver} discards the body of
+     * a 101 response, so an upgraded connection can complete its handshake and
+     * then never deliver a byte. SSE is one-way, which is all the feed needs,
+     * and it survives the reverse proxies people put in front of a game
+     * server. Commands travel the other way over {@code POST /command}.</p>
+     *
+     * <p>The handler thread parks for the life of the connection — the
+     * exchange is closed as soon as it returns — and wakes when a write fails
+     * or the server shuts down.</p>
+     */
+    private void handleEvents(HttpExchange ex) throws IOException {
+        ex.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+        ex.getResponseHeaders().set("Cache-Control", "no-cache");
+        ex.getResponseHeaders().set("Connection", "keep-alive");
+        ex.sendResponseHeaders(200, 0);
 
-        WebSocketSession session = new WebSocketSession(ex);
-        sessions.add(session);
-        // send initial state
-        session.send(stateMessage());
-        // read loop in a new thread; remove on close
-        Thread t = new Thread(() -> {
-            session.readLoop(this::onClientMessage);
+        StreamSession session = new StreamSession(ex);
+        try {
+            // Take the cursor from the state message this client is about to
+            // receive, so its first live push starts after the history it
+            // already has rather than replaying it.
+            JsonObject state = stateMessage();
+            session.sentSeq = state.get("lastSeq").getAsLong();
+            sessions.add(session);
+            session.send(state);
+            session.await();
+        } finally {
             sessions.remove(session);
-        }, "minelight-ws-client");
-        t.setDaemon(true);
-        t.start();
+            session.close();
+        }
     }
 
-    private static String websocketAccept(String key) {
+    private void handleCommand(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            ex.sendResponseHeaders(405, -1);
+            ex.close();
+            return;
+        }
         try {
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
-            byte[] digest = md.digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-                    .getBytes(StandardCharsets.ISO_8859_1));
-            return java.util.Base64.getEncoder().encodeToString(digest);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
+            String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            onClientMessage(com.google.gson.JsonParser.parseString(body).getAsJsonObject());
+            ex.sendResponseHeaders(204, -1);
+        } catch (Exception e) {
+            byte[] msg = ("{\"error\":\"" + e.getClass().getSimpleName() + "\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().set("Content-Type", "application/json");
+            ex.sendResponseHeaders(400, msg.length);
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(msg);
+            }
+        } finally {
+            ex.close();
         }
     }
 
@@ -197,15 +234,7 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
         JsonObject o = new JsonObject();
         o.addProperty("type", "state");
         o.add("patch", engine.patch().toJson());
-        JsonObject dmx = new JsonObject();
-        engine.dmxSnapshot().forEach((u, data) -> {
-            JsonArray arr = new JsonArray();
-            for (byte b : data) {
-                arr.add(b & 0xFF);
-            }
-            dmx.add(String.valueOf(u), arr);
-        });
-        o.add("dmx", dmx);
+        o.add("dmx", dmxJson());
         JsonObject redstone = new JsonObject();
         engine.redstoneSnapshot().forEach((id, on) -> redstone.addProperty(String.valueOf(id), on));
         o.add("redstone", redstone);
@@ -221,6 +250,18 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
         o.add("events", engine.eventLog().toJson(0));
         o.addProperty("lastSeq", engine.eventLog().lastSeq());
         return o;
+    }
+
+    private JsonObject dmxJson() {
+        JsonObject dmx = new JsonObject();
+        engine.dmxSnapshot().forEach((u, data) -> {
+            JsonArray arr = new JsonArray();
+            for (byte b : data) {
+                arr.add(b & 0xFF);
+            }
+            dmx.add(String.valueOf(u), arr);
+        });
+        return dmx;
     }
 
     private JsonArray devicesJson() {
@@ -281,29 +322,38 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
         try {
             JsonObject o = new JsonObject();
             o.addProperty("type", "live");
+            o.add("dmx", dmxJson());
             o.add("blocks", engine.blocks().liveJson());
             o.add("sound", engine.sound().liveJson());
             JsonObject redstone = new JsonObject();
             engine.redstoneSnapshot().forEach((id, on) -> redstone.addProperty(String.valueOf(id), on));
             o.add("redstone", redstone);
 
-            long last = engine.eventLog().lastSeq();
-            if (last > sentSeq) {
-                List<EventLog.Entry> fresh = engine.eventLog().since(sentSeq);
-                JsonArray events = new JsonArray();
-                for (EventLog.Entry e : fresh) {
-                    events.add(e.toJson());
-                }
-                o.add("events", events);
-                sentSeq = last;
-            }
-
             long now = System.currentTimeMillis();
             if (now - lastDeviceBroadcast >= DEVICE_INTERVAL_MS) {
                 o.add("devices", devicesJson());
                 lastDeviceBroadcast = now;
             }
-            broadcast(o);
+
+            // Each client is at its own point in the event log — one that
+            // connected a moment ago must not be sent the backlog its state
+            // message already carried — so events are appended per session.
+            long last = engine.eventLog().lastSeq();
+            String shared = GSON.toJson(o);
+            for (StreamSession s : sessions) {
+                if (last > s.sentSeq) {
+                    JsonObject withEvents = o.deepCopy();
+                    JsonArray events = new JsonArray();
+                    for (EventLog.Entry e : engine.eventLog().since(s.sentSeq)) {
+                        events.add(e.toJson());
+                    }
+                    withEvents.add("events", events);
+                    s.sentSeq = last;
+                    s.send(GSON.toJson(withEvents));
+                } else {
+                    s.send(shared);
+                }
+            }
         } catch (Exception ignored) {
             // a monitor must never take the engine down with it
         }
@@ -380,120 +430,65 @@ public final class WebConsoleServer implements ProtocolServer, ConsoleEngine.Dmx
 
     private void broadcast(JsonObject msg) {
         String json = GSON.toJson(msg);
-        for (WebSocketSession s : sessions) {
+        for (StreamSession s : sessions) {
             s.send(json);
         }
     }
 
-    @Override
-    public void onDmx(Map<Integer, byte[]> universes) {
-        if (sessions.isEmpty()) {
-            return;
-        }
-        JsonObject o = new JsonObject();
-        o.addProperty("type", "dmx");
-        JsonObject dmx = new JsonObject();
-        universes.forEach((u, data) -> {
-            JsonArray arr = new JsonArray();
-            for (byte b : data) {
-                arr.add(b & 0xFF);
-            }
-            dmx.add(String.valueOf(u), arr);
-        });
-        o.add("dmx", dmx);
-        broadcast(o);
-    }
+    // ---- one connected browser --------------------------------------------
 
-    // ---- minimal RFC6455 session -----------------------------------------
-
-    private static final class WebSocketSession {
+    private static final class StreamSession {
         private final HttpExchange ex;
         private final OutputStream out;
-        private final InputStream in;
+        /** Highest event sequence this client has been sent. */
+        volatile long sentSeq;
+        private final java.util.concurrent.CountDownLatch closed =
+                new java.util.concurrent.CountDownLatch(1);
 
-        WebSocketSession(HttpExchange ex) {
+        StreamSession(HttpExchange ex) {
             this.ex = ex;
             this.out = ex.getResponseBody();
-            this.in = ex.getRequestBody();
         }
 
-        synchronized void send(JsonObject msg) {
+        String address() {
+            var remote = ex.getRemoteAddress();
+            return remote == null ? "?" : remote.getAddress().getHostAddress();
+        }
+
+        void send(JsonObject msg) {
             send(GSON.toJson(msg));
         }
 
-        synchronized void send(String text) {
+        synchronized void send(String json) {
+            if (closed.getCount() == 0) {
+                return;
+            }
             try {
-                byte[] payload = text.getBytes(StandardCharsets.UTF_8);
-                java.io.ByteArrayOutputStream frame = new java.io.ByteArrayOutputStream();
-                frame.write(0x81); // FIN + text
-                if (payload.length < 126) {
-                    frame.write(payload.length);
-                } else if (payload.length < 65536) {
-                    frame.write(126);
-                    frame.write((payload.length >> 8) & 0xFF);
-                    frame.write(payload.length & 0xFF);
-                } else {
-                    frame.write(127);
-                    for (int i = 7; i >= 0; i--) {
-                        frame.write((payload.length >> (8 * i)) & 0xFF);
-                    }
-                }
-                frame.write(payload);
-                out.write(frame.toByteArray());
+                // SSE frames are newline-delimited, so the payload must not
+                // contain a raw newline. Gson emits none, but a pretty-printed
+                // or hand-built string would.
+                out.write(("data: " + json.replace("\n", " ") + "\n\n")
+                        .getBytes(StandardCharsets.UTF_8));
                 out.flush();
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                close();
             }
         }
 
-        void readLoop(java.util.function.Consumer<JsonObject> onMessage) {
+        /** Park until the client goes away or the server stops. */
+        void await() {
             try {
-                while (true) {
-                    int b1 = in.read();
-                    if (b1 < 0) {
-                        break;
-                    }
-                    int b2 = in.read();
-                    if (b2 < 0) {
-                        break;
-                    }
-                    int opcode = b1 & 0x0F;
-                    boolean masked = (b2 & 0x80) != 0;
-                    long len = b2 & 0x7F;
-                    if (len == 126) {
-                        len = ((in.read() & 0xFF) << 8) | (in.read() & 0xFF);
-                    } else if (len == 127) {
-                        len = 0;
-                        for (int i = 0; i < 8; i++) {
-                            len = (len << 8) | (in.read() & 0xFF);
-                        }
-                    }
-                    if (len > 1 << 20) { // 1 MiB cap
-                        break;
-                    }
-                    byte[] mask = new byte[4];
-                    if (masked) {
-                        in.readNBytes(mask, 0, 4);
-                    }
-                    byte[] payload = in.readNBytes((int) len);
-                    if (masked) {
-                        for (int i = 0; i < payload.length; i++) {
-                            payload[i] ^= mask[i % 4];
-                        }
-                    }
-                    if (opcode == 0x8) { // close
-                        break;
-                    }
-                    if (opcode == 0x1) { // text
-                        String s = new String(payload, StandardCharsets.UTF_8);
-                        onMessage.accept(com.google.gson.JsonParser.parseString(s).getAsJsonObject());
-                    }
-                }
+                closed.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        void close() {
+            closed.countDown();
+            try {
+                ex.close();
             } catch (Exception ignored) {
-            } finally {
-                try {
-                    ex.close();
-                } catch (Exception ignored) {
-                }
             }
         }
     }

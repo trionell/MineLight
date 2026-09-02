@@ -195,26 +195,24 @@ const TABS = [
 ];
 const MAX_SIGNALS = 500;
 
-let ws;
+let source;
 let state = {patch:{fixtures:[]}, dmx:{}, redstone:{}, presets:[], blocks:[], sound:[], devices:[]};
 let events = [];
 let paused = false;
 let tab = 'patch';
 
 function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(proto + '://' + location.host + '/ws');
-  ws.onopen = () => { setConn(true); log('connected'); };
-  ws.onclose = () => { setConn(false); log('disconnected, retrying…'); setTimeout(connect, 1000); };
-  ws.onmessage = ev => {
+  // Server-Sent Events, not a WebSocket: the engine's HTTP server cannot
+  // deliver an upgraded connection's body. EventSource reconnects on its own.
+  source = new EventSource('/events');
+  source.onopen = () => { setConn(true); log('connected'); };
+  source.onerror = () => { setConn(false); };
+  source.onmessage = ev => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'state') {
       state = msg;
       events = (msg.events || []).slice().reverse();
       render();
-    } else if (msg.type === 'dmx') {
-      state.dmx = msg.dmx;
-      renderLevels();
     } else if (msg.type === 'live') {
       applyLive(msg);
     }
@@ -222,6 +220,7 @@ function connect() {
 }
 
 function applyLive(msg) {
+  if (msg.dmx) { state.dmx = msg.dmx; renderLevels(); }
   if (msg.blocks) state.blocks = msg.blocks;
   if (msg.sound) state.sound = msg.sound;
   if (msg.redstone) state.redstone = msg.redstone;
@@ -242,7 +241,13 @@ function setConn(on) {
   document.getElementById('status').textContent = on ? 'live' : 'offline';
 }
 
-function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function send(obj) {
+  fetch('/command', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(obj),
+  }).catch(() => log('command failed'));
+}
 
 function renderTabs() {
   const bar = document.getElementById('tabs');
