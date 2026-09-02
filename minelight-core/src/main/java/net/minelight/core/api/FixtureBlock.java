@@ -31,7 +31,21 @@ import java.util.List;
 public final class FixtureBlock {
 
     public enum Type {
-        DIMMER, RGB, EVENT, FEEDBACK
+        DIMMER(BlockRole.INPUT),
+        RGB(BlockRole.INPUT),
+        EVENT(BlockRole.TRIGGER),
+        FEEDBACK(BlockRole.FIXTURE);
+
+        private final BlockRole role;
+
+        Type(BlockRole role) {
+            this.role = role;
+        }
+
+        /** Which way signal flows through a block of this type. */
+        public BlockRole role() {
+            return role;
+        }
     }
 
     /** Which face of the block a port reads. ANY means strongest of all faces. */
@@ -150,6 +164,7 @@ public final class FixtureBlock {
         o.addProperty("id", id);
         o.addProperty("name", name);
         o.addProperty("type", type.name());
+        o.addProperty("role", type.role().name());
         o.addProperty("x", x);
         o.addProperty("y", y);
         o.addProperty("z", z);

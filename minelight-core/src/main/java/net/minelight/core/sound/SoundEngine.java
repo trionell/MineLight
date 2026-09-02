@@ -38,7 +38,21 @@ public final class SoundEngine {
     private int nextId = 1;
 
     public enum Mode {
-        NOTE, LEVEL, BEAT, SPECTRUM
+        NOTE(net.minelight.core.api.BlockRole.INPUT),
+        LEVEL(net.minelight.core.api.BlockRole.INPUT),
+        BEAT(net.minelight.core.api.BlockRole.TRIGGER),
+        SPECTRUM(net.minelight.core.api.BlockRole.INPUT);
+
+        private final net.minelight.core.api.BlockRole role;
+
+        Mode(net.minelight.core.api.BlockRole role) {
+            this.role = role;
+        }
+
+        /** Which way signal flows through a block in this mode. */
+        public net.minelight.core.api.BlockRole role() {
+            return role;
+        }
     }
 
     /**
@@ -321,6 +335,8 @@ public final class SoundEngine {
             o.addProperty("id", b.id);
             o.addProperty("name", b.name);
             o.addProperty("mode", b.mode.name());
+            o.addProperty("role", b.mode.role().name());
+            o.addProperty("sound", true);
             o.addProperty("x", b.x);
             o.addProperty("y", b.y);
             o.addProperty("z", b.z);
