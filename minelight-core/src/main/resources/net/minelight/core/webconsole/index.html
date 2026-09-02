@@ -72,6 +72,15 @@
     border:1px solid var(--border); border-radius:4px; color:var(--accent-2);
   }
   .card .pos { font-size:11px; color:var(--muted); margin-bottom:8px; }
+  .group { margin-bottom:16px; }
+  .group > h3 {
+    margin:0 0 4px; font-size:11px; font-weight:normal; color:var(--muted);
+    text-transform:uppercase; letter-spacing:1px;
+  }
+  .group > .blurb { font-size:11px; color:var(--muted); margin:0 0 8px; opacity:.75; }
+  .tag.role-INPUT { color:var(--ok); }
+  .tag.role-TRIGGER { color:var(--warn); }
+  .tag.role-FIXTURE { color:var(--accent); }
   .swatch { width:34px; height:34px; border-radius:4px; border:1px solid var(--border); flex:none; }
   table.ports { width:100%; border-collapse:collapse; font-size:11px; }
   table.ports th { text-align:left; color:var(--muted); font-weight:normal; padding:2px 4px; }
@@ -123,24 +132,17 @@
     </div>
 
     <div class="panel view" id="view-blocks" hidden>
-      <h2>Fixture Blocks</h2>
-      <div class="cards" id="blocks"></div>
+      <h2>Blocks</h2>
+      <div class="row" id="roleFilter"></div>
+      <div id="blocks"></div>
       <div class="empty" id="blocksEmpty" hidden>
-        No fixture blocks placed. Place a dimmer, RGB, event or feedback block in the world.
-      </div>
-    </div>
-
-    <div class="panel view" id="view-sound" hidden>
-      <h2>Sound Blocks</h2>
-      <div class="cards" id="sound"></div>
-      <div class="empty" id="soundEmpty" hidden>
-        No sound blocks placed. Place a sound meter, beat, spectrum or note fixture.
+        No blocks placed. Place a dimmer, RGB, event, sound or feedback block in the world.
       </div>
     </div>
 
     <div class="panel view" id="view-devices" hidden>
       <h2>Devices</h2>
-      <div class="cards" id="devices"></div>
+      <div class="cards"><div id="devices" style="display:contents"></div></div>
     </div>
 
     <div class="panel view" id="view-signals" hidden>
@@ -190,7 +192,6 @@
 const TABS = [
   {id:'patch',   label:'Patch'},
   {id:'blocks',  label:'Blocks'},
-  {id:'sound',   label:'Sound'},
   {id:'devices', label:'Devices'},
   {id:'signals', label:'Signals'},
 ];
@@ -221,7 +222,9 @@ function connect() {
 }
 
 function applyLive(msg) {
-  if (msg.dmx) { state.dmx = msg.dmx; renderLevels(); }
+  // The server omits sections that have not changed, so an idle show sends
+  // nothing and nothing below runs.
+  if (msg.dmx) state.dmx = msg.dmx;
   if (msg.blocks) state.blocks = msg.blocks;
   if (msg.sound) state.sound = msg.sound;
   if (msg.redstone) state.redstone = msg.redstone;
@@ -230,11 +233,17 @@ function applyLive(msg) {
     // newest first, capped — the server ring is the source of truth for history
     events = msg.events.slice().reverse().concat(events).slice(0, MAX_SIGNALS);
   }
-  renderCounts();
-  if (tab === 'blocks') renderBlocks();
-  else if (tab === 'sound') renderSound();
-  else if (tab === 'devices') renderDevices();
-  else if (tab === 'signals' && msg.events && msg.events.length) renderSignals();
+
+  if (msg.blocks || msg.sound || msg.devices) renderCounts();
+  if (tab === 'patch') {
+    if (msg.dmx || msg.redstone) renderLevels();
+  } else if (tab === 'blocks') {
+    if (msg.blocks || msg.sound || msg.dmx) { renderRoleFilter(); renderBlocks(); }
+  } else if (tab === 'devices') {
+    if (msg.devices) renderDevices();
+  } else if (tab === 'signals') {
+    if (msg.events && msg.events.length) renderSignals();
+  }
 }
 
 function setConn(on) {
@@ -251,22 +260,22 @@ function send(obj) {
 }
 
 function renderTabs() {
-  const bar = document.getElementById('tabs');
-  bar.innerHTML = '';
-  for (const t of TABS) {
-    const b = document.createElement('button');
-    b.textContent = t.label;
-    if (t.id === tab) b.className = 'active';
-    b.onclick = () => selectTab(t.id);
-    bar.appendChild(b);
-  }
+  setHtml('tabs', TABS.map(t =>
+    `<button class="${t.id === tab ? 'active' : ''}" onclick="selectTab('${t.id}')">${t.label}</button>`
+  ).join(''));
 }
+
+let deviceAgeTimer = null;
 
 function selectTab(id) {
   tab = id;
   for (const t of TABS) {
     document.getElementById('view-' + t.id).hidden = t.id !== id;
   }
+  // Peer ages advance on their own, so the devices table needs a local tick.
+  // Only while it is on screen: off screen it would be pure DOM churn.
+  clearInterval(deviceAgeTimer);
+  deviceAgeTimer = id === 'devices' ? setInterval(renderDevices, 1000) : null;
   renderTabs();
   render();
 }
@@ -275,8 +284,8 @@ function render() {
   renderTabs();
   renderCounts();
   renderFixtures();
+  renderRoleFilter();
   renderBlocks();
-  renderSound();
   renderDevices();
   renderSignals();
   renderPresets();
@@ -287,49 +296,60 @@ function render() {
 function renderCounts() {
   const devices = state.devices || [];
   const online = devices.filter(d => d.running).length;
-  document.getElementById('counts').innerHTML =
-    `fixtures <b>${(state.patch.fixtures || []).length}</b> · ` +
-    `blocks <b>${(state.blocks || []).length}</b> · ` +
-    `sound <b>${(state.sound || []).length}</b> · ` +
-    `devices <b>${online}/${devices.length}</b>`;
+  setHtml('counts',
+    `patch <b>${(state.patch.fixtures || []).length}</b> · ` +
+    `blocks <b>${allBlocks().length}</b> · ` +
+    `devices <b>${online}/${devices.length}</b>`);
 }
 
 /* ---- patch ---- */
 
 function renderFixtures() {
-  const grid = document.getElementById('grid');
   const fixtures = state.patch.fixtures || [];
   document.getElementById('patchEmpty').hidden = fixtures.length > 0;
-  grid.innerHTML = '';
-  for (const f of fixtures) {
-    const div = document.createElement('div');
-    div.className = 'chan';
-    div.innerHTML = `
+  const html = fixtures.map(f => `
+    <div class="chan">
       <div class="rs" data-rs="${f.id}"></div>
       <div class="name">#${f.id} ${esc(f.name)}</div>
       <div class="val" data-val="${f.id}">0</div>
       <div class="bar"><i data-bar="${f.id}" style="height:0%"></i></div>
       <input type="range" min="0" max="255" value="0" style="width:100%"
-        data-slider="${f.id}"
-        oninput="onSlider(${f.id}, this.value)">
+        data-slider="${f.id}" oninput="onSlider(${f.id}, this.value)">
       <div class="meta">u${f.universe}.${f.address} · ${esc(f.mode)}</div>
-      <div class="meta">${f.x}, ${f.y}, ${f.z} · ${esc(f.kind)}</div>`;
-    grid.appendChild(div);
+      <div class="meta">${f.x}, ${f.y}, ${f.z} · ${esc(f.kind)}</div>
+    </div>`).join('');
+  if (setHtml('grid', html)) {
+    // the grid was rebuilt, so the cached nodes are stale
+    levelNodes = null;
   }
   renderLevels();
 }
 
+// Looking these up per fixture per frame was the other repeated DOM cost.
+let levelNodes = null;
+
+function cacheLevelNodes() {
+  levelNodes = (state.patch.fixtures || []).map(f => ({
+    f,
+    val: document.querySelector(`[data-val="${f.id}"]`),
+    bar: document.querySelector(`[data-bar="${f.id}"]`),
+    slider: document.querySelector(`[data-slider="${f.id}"]`),
+    rs: document.querySelector(`[data-rs="${f.id}"]`),
+  }));
+}
+
 function renderLevels() {
-  for (const f of (state.patch.fixtures || [])) {
-    const v = chan(f.universe, f.address);
-    const val = document.querySelector(`[data-val="${f.id}"]`);
-    const bar = document.querySelector(`[data-bar="${f.id}"]`);
-    const slider = document.querySelector(`[data-slider="${f.id}"]`);
-    if (val) val.textContent = v;
-    if (bar) bar.style.height = (v / 255 * 100) + '%';
-    if (slider && document.activeElement !== slider) slider.value = v;
-    const rs = document.querySelector(`[data-rs="${f.id}"]`);
-    if (rs) rs.className = 'rs' + (state.redstone[String(f.id)] ? ' on' : '');
+  if (!levelNodes) cacheLevelNodes();
+  for (const n of levelNodes) {
+    const v = chan(n.f.universe, n.f.address);
+    setText(n.val, v);
+    const height = (v / 255 * 100) + '%';
+    if (n.bar && n.bar.style.height !== height) n.bar.style.height = height;
+    if (n.slider && document.activeElement !== n.slider && +n.slider.value !== v) {
+      n.slider.value = v;
+    }
+    const cls = 'rs' + (state.redstone[String(n.f.id)] ? ' on' : '');
+    if (n.rs && n.rs.className !== cls) n.rs.className = cls;
   }
 }
 
@@ -338,40 +358,84 @@ function chan(universe, address) {
   return uni ? (uni[address - 1] || 0) : 0;
 }
 
-/* ---- fixture blocks ---- */
+/* ---- blocks ----------------------------------------------------------
+
+   Most placed blocks are not fixtures: a dimmer or sound meter feeds the
+   console, an event block triggers it. Only a feedback block takes a level
+   back from the console, so it is the one that behaves like a fixture.
+   Blocks are grouped by that role rather than by which engine tracks them. */
+
+const ROLES = [
+  {id:'INPUT',   label:'Inputs',   blurb:'World state driving a DMX channel'},
+  {id:'TRIGGER', label:'Triggers', blurb:'Edges firing an event at the console'},
+  {id:'FIXTURE', label:'Fixtures', blurb:'Console levels acting back on the world'},
+];
+
+let roleFilter = null;
+
+function allBlocks() {
+  return [...(state.blocks || []), ...(state.sound || [])];
+}
+
+function setRoleFilter(role) {
+  roleFilter = roleFilter === role ? null : role;
+  renderRoleFilter();
+  renderBlocks();
+}
+
+function renderRoleFilter() {
+  const counts = {};
+  for (const b of allBlocks()) counts[b.role] = (counts[b.role] || 0) + 1;
+  const html = ROLES.map(r =>
+    `<button class="${roleFilter === r.id ? 'active' : ''}" onclick="setRoleFilter('${r.id}')">
+       ${r.label} ${counts[r.id] || 0}</button>`).join('');
+  setHtml('roleFilter', html);
+}
 
 function renderBlocks() {
-  const host = document.getElementById('blocks');
-  const blocks = state.blocks || [];
+  const blocks = allBlocks();
   document.getElementById('blocksEmpty').hidden = blocks.length > 0;
-  host.innerHTML = '';
-  for (const b of blocks) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const swatch = b.color
-      ? `<div class="swatch" style="background:${esc(b.color)}" title="${esc(b.color)}"></div>` : '';
-    let extra = '';
-    if (b.type === 'FEEDBACK') {
-      extra = `<div class="row" style="margin:8px 0 0">
-                 <span class="pill">console → redstone</span>
-                 <span style="color:var(--accent-2)">${b.feedbackLevel ?? 0}/15</span>
-                 <div class="meter" style="flex:1"><i style="width:${(b.feedbackLevel ?? 0) / 15 * 100}%"></i></div>
-               </div>`;
-    }
-    card.innerHTML = `
-      <div class="head">
-        ${swatch}
-        <div>
-          <div class="title">${esc(b.name)}</div>
-          <div class="id">#${b.id}</div>
-        </div>
-        <span class="tag">${esc(b.type)}</span>
-      </div>
-      <div class="pos">${b.x}, ${b.y}, ${b.z}</div>
-      ${portTable(b)}
-      ${extra}`;
-    host.appendChild(card);
+  const html = ROLES.map(role => {
+    if (roleFilter && roleFilter !== role.id) return '';
+    const inRole = blocks.filter(b => b.role === role.id);
+    if (!inRole.length) return '';
+    return `<div class="group">
+      <h3>${role.label}</h3>
+      <p class="blurb">${role.blurb}</p>
+      <div class="cards">${inRole.map(blockCard).join('')}</div>
+    </div>`;
+  }).join('');
+  setHtml('blocks', html);
+}
+
+function blockCard(b) {
+  return b.sound ? soundCard(b) : fixtureBlockCard(b);
+}
+
+function fixtureBlockCard(b) {
+  const swatch = b.color
+    ? `<div class="swatch" style="background:${esc(b.color)}" title="${esc(b.color)}"></div>` : '';
+  let extra = '';
+  if (b.type === 'FEEDBACK') {
+    const level = b.feedbackLevel ?? 0;
+    extra = `<div class="row" style="margin:8px 0 0">
+               <span class="pill">console → redstone</span>
+               <span style="color:var(--accent-2)">${level}/15</span>
+               <div class="meter" style="flex:1"><i style="width:${level / 15 * 100}%"></i></div>
+             </div>`;
   }
+  return `<div class="card">
+    <div class="head">
+      ${swatch}
+      <div>
+        <div class="title">${esc(b.name)}</div>
+        <div class="id">#${b.id} · ${esc(b.type)}</div>
+      </div>
+      <span class="tag role-${esc(b.role)}">${esc(b.role)}</span>
+    </div>
+    <div class="pos">${b.x}, ${b.y}, ${b.z}</div>
+    ${portTable(b)}
+    ${extra}</div>`;
 }
 
 function portTable(b) {
@@ -401,64 +465,48 @@ function portTable(b) {
     ${rows}</table>`;
 }
 
-/* ---- sound blocks ---- */
-
-function renderSound() {
-  const host = document.getElementById('sound');
-  const blocks = state.sound || [];
-  document.getElementById('soundEmpty').hidden = blocks.length > 0;
-  host.innerHTML = '';
-  for (const b of blocks) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const swatch = b.color
-      ? `<div class="swatch" style="background:${esc(b.color)}" title="${esc(b.color)}"></div>` : '';
-    const out = (b.dmx || []).map(v => v).join(' / ');
-    const note = b.mode === 'NOTE'
-      ? `<span>note</span><span>${b.lastNote < 0 ? '—' : b.lastNote + ' ' + esc(b.lastInstrument || '')}</span>` : '';
-    const beat = b.mode === 'BEAT'
-      ? `<span>beat</span><span><span class="beat${b.beat ? ' on' : ''}"></span>
-           thr ${fmt(b.beatThreshold)} · avg ${fmt(b.runningAvg)}</span>` : '';
-    card.innerHTML = `
-      <div class="head">
-        ${swatch}
-        <div>
-          <div class="title">${esc(b.name)}</div>
-          <div class="id">#${b.id}</div>
-        </div>
-        <span class="tag">${esc(b.mode)}</span>
+function soundCard(b) {
+  const swatch = b.color
+    ? `<div class="swatch" style="background:${esc(b.color)}" title="${esc(b.color)}"></div>` : '';
+  const out = (b.dmx || []).join(' / ');
+  const note = b.mode === 'NOTE'
+    ? `<span>note</span><span>${b.lastNote < 0 ? '—' : b.lastNote + ' ' + esc(b.lastInstrument || '')}</span>` : '';
+  const beat = b.mode === 'BEAT'
+    ? `<span>beat</span><span><span class="beat${b.beat ? ' on' : ''}"></span>
+         thr ${fmt(b.beatThreshold)} · avg ${fmt(b.runningAvg)}</span>` : '';
+  return `<div class="card">
+    <div class="head">
+      ${swatch}
+      <div>
+        <div class="title">${esc(b.name)}</div>
+        <div class="id">#${b.id} · ${esc(b.mode)}</div>
       </div>
-      <div class="pos">${b.x}, ${b.y}, ${b.z} · radius ${b.radius}</div>
-      <div class="kv">
-        <span>output</span><span>u${b.universe}.${b.channel} → ${out || 0}</span>
-        <span>input</span><span><div class="meter cool"><i style="width:${clampPct(b.level)}%"></i></div></span>
-        <span>envelope</span><span><div class="meter"><i style="width:${clampPct(b.envelope)}%"></i></div></span>
-        <span>gain</span><span>${fmt(b.gain)} · decay ${fmt(b.decay)}</span>
-        ${note}
-        ${beat}
-      </div>`;
-    host.appendChild(card);
-  }
+      <span class="tag role-${esc(b.role)}">${esc(b.role)}</span>
+    </div>
+    <div class="pos">${b.x}, ${b.y}, ${b.z} · radius ${b.radius}</div>
+    <div class="kv">
+      <span>output</span><span>u${b.universe}.${b.channel} → ${out || 0}</span>
+      <span>input</span><span><div class="meter cool"><i style="width:${clampPct(b.level)}%"></i></div></span>
+      <span>envelope</span><span><div class="meter"><i style="width:${clampPct(b.envelope)}%"></i></div></span>
+      <span>gain</span><span>${fmt(b.gain)} · decay ${fmt(b.decay)}</span>
+      ${note}
+      ${beat}
+    </div></div>`;
 }
 
 /* ---- devices ---- */
 
 function renderDevices() {
-  const host = document.getElementById('devices');
-  host.innerHTML = '';
-  for (const d of (state.devices || [])) {
-    const card = document.createElement('div');
-    card.className = 'card';
+  setHtml('devices', (state.devices || []).map(d => {
     const fields = deviceFields(d);
-    card.innerHTML = `
+    return `<div class="card">
       <div class="head">
         <div class="title">${esc(d.name)}</div>
         <span class="tag">${d.running ? 'RUNNING' : 'IDLE'}</span>
       </div>
       ${fields ? `<div class="kv">${fields}</div>` : ''}
-      ${peerTable(d.peers)}`;
-    host.appendChild(card);
-  }
+      ${peerTable(d.peers)}</div>`;
+  }).join(''));
 }
 
 function deviceFields(d) {
@@ -479,13 +527,14 @@ function peerTable(peers) {
   if (!peers || !peers.length) {
     return '<div class="empty">nothing has connected</div>';
   }
+  const now = Date.now();
   const rows = peers.map(p => {
-    const stale = p.ageMs !== undefined && p.ageMs > 5000;
-    return `<tr class="${stale ? 'stale' : ''}">
+    const age = p.lastSeen ? now - p.lastSeen : null;
+    return `<tr class="${age !== null && age > 5000 ? 'stale' : ''}">
       <td>${esc(p.address)}</td>
       <td>${esc(p.detail || '')}</td>
       <td>${p.packets !== undefined ? p.packets : ''}</td>
-      <td>${p.ageMs !== undefined ? ago(p.ageMs) : ''}</td>
+      <td>${age === null ? '' : ago(age)}</td>
     </tr>`;
   }).join('');
   return `<table class="grid" style="margin-top:8px">
@@ -511,8 +560,7 @@ function renderSignals() {
       <td class="kind ${kindClass(e.kind)}">${esc(e.kind)}</td>
       <td class="data">${esc(summarise(e.data))}</td>
     </tr>`).join('');
-  document.getElementById('signals').innerHTML =
-    rows ? `<table>${rows}</table>` : '<div class="empty">no signals yet</div>';
+  setHtml('signals', rows ? `<table>${rows}</table>` : '<div class="empty">no signals yet</div>');
 }
 
 function kindClass(kind) {
@@ -533,15 +581,11 @@ function summarise(data) {
 /* ---- controls ---- */
 
 function renderPresets() {
-  const div = document.getElementById('presets');
-  div.innerHTML = '';
-  for (const p of (state.presets || [])) {
-    const b = document.createElement('button');
-    b.textContent = p;
-    b.onclick = () => send({type:'preset', name:p});
-    div.appendChild(b);
-  }
+  setHtml('presets', (state.presets || [])
+    .map(p => `<button onclick="applyPreset('${esc(p)}')">${esc(p)}</button>`).join(''));
 }
+
+function applyPreset(name) { send({type:'preset', name}); }
 
 function onSlider(id, v) { send({type:'intensity', fixtureId:id, value:+v}); }
 function savePreset() {
@@ -559,6 +603,21 @@ function reloadScript() { send({type:'script', script:document.getElementById('s
 
 /* ---- helpers ---- */
 
+// Writing innerHTML tears down and rebuilds a subtree even when the markup is
+// identical, and every mutation wakes each MutationObserver on the page —
+// including those browser extensions install. Skipping unchanged writes is
+// what keeps an idle console at zero CPU.
+const painted = {};
+function setHtml(id, html) {
+  if (painted[id] === html) return false;
+  painted[id] = html;
+  document.getElementById(id).innerHTML = html;
+  return true;
+}
+function setText(el, text) {
+  if (el && el.textContent !== String(text)) el.textContent = text;
+}
+
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmt(n){ return (Math.round((n || 0) * 100) / 100).toFixed(2); }
 function clampPct(v){ return Math.max(0, Math.min(1, v || 0)) * 100; }
@@ -569,7 +628,15 @@ function ago(ms){
   if (ms < 3600000) return Math.round(ms / 60000) + 'm';
   return Math.round(ms / 3600000) + 'h';
 }
-function log(m){ const l=document.getElementById('log'); l.innerHTML += '<div>'+esc(m)+'</div>'; l.scrollTop=l.scrollHeight; }
+const MAX_LOG = 100;
+function log(m){
+  const l = document.getElementById('log');
+  const line = document.createElement('div');
+  line.textContent = m;
+  l.appendChild(line);
+  while (l.childElementCount > MAX_LOG) l.removeChild(l.firstChild);
+  l.scrollTop = l.scrollHeight;
+}
 
 renderTabs();
 connect();
