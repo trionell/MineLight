@@ -221,6 +221,28 @@ class MonitoringTest {
     }
 
     @Test
+    void inboundControlIsAttributedToItsSource() throws Exception {
+        ConsoleEngine engine = engine();
+        engine.patch().addFixture("House", net.minelight.core.api.Patch.DIMMER,
+                1, 1, 0, 64, 0, "lamp");
+
+        engine.emitControl("osc", "fixture", Map.of("fixtureId", 1, "value", 200));
+
+        var entry = engine.eventLog().all().get(0);
+        assertEquals("control.fixture", entry.event().kind());
+        assertEquals("osc", entry.event().getString("source", ""));
+        assertEquals(200, entry.event().getInt("value", 0));
+    }
+
+    @Test
+    void emitControlToleratesNoData() throws Exception {
+        ConsoleEngine engine = engine();
+        engine.emitControl("web", "script", null);
+        assertEquals("control.script", engine.eventLog().all().get(0).event().kind());
+        assertEquals("web", engine.eventLog().all().get(0).event().getString("source", ""));
+    }
+
+    @Test
     void protocolServerStatusCarriesTheBasics() throws Exception {
         ConsoleEngine engine = engine();
         var artnet = new net.minelight.core.artnet.ArtNetServer(engine);

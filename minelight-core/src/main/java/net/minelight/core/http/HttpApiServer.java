@@ -234,7 +234,12 @@ public final class HttpApiServer implements ProtocolServer {
         String action = parts[4];
         JsonObject body = JsonParserCompat.parse(readBody(ex));
         switch (action) {
-            case "intensity" -> engine.setFixtureIntensity(id, body.get("value").getAsInt());
+            case "intensity" -> {
+                int value = body.get("value").getAsInt();
+                engine.setFixtureIntensity(id, value);
+                engine.emitControl("http", "fixture",
+                        Map.of("fixtureId", id, "action", action, "value", value));
+            }
             case "set" -> {
                 JsonArray levels = body.getAsJsonArray("levels");
                 int[] arr = new int[levels.size()];
@@ -242,6 +247,9 @@ public final class HttpApiServer implements ProtocolServer {
                     arr[i] = levels.get(i).getAsInt();
                 }
                 engine.setFixtureLevels(id, arr);
+                engine.emitControl("http", "fixture",
+                        Map.of("fixtureId", id, "action", action,
+                                "levels", java.util.Arrays.toString(arr)));
             }
             case "redstone" -> engine.setRedstone(id, body.get("on").getAsBoolean());
             default -> {
@@ -262,7 +270,9 @@ public final class HttpApiServer implements ProtocolServer {
         }
         if ("POST".equals(ex.getRequestMethod()) && path.endsWith("/apply")) {
             String name = path.split("/")[3];
-            sendJson(ex, engine.applyPreset(name) ? 200 : 404, new JsonObject());
+            boolean applied = engine.applyPreset(name);
+            engine.emitControl("http", "preset", Map.of("name", name, "applied", applied));
+            sendJson(ex, applied ? 200 : 404, new JsonObject());
             return;
         }
         sendError(ex, 405, "Method not allowed");
@@ -288,6 +298,7 @@ public final class HttpApiServer implements ProtocolServer {
         if (cue != null && cue.levels() != null) {
             cue.levels().forEach(engine::setFixtureLevels);
         }
+        engine.emitControl("http", "cue", Map.of("list", list, "index", cl.index()));
         JsonObject resp = new JsonObject();
         resp.addProperty("index", cl.index());
         sendJson(ex, 200, resp);

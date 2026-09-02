@@ -520,8 +520,8 @@ function kindClass(kind) {
   if (kind.startsWith('sound.')) return 'k-sound';
   if (kind.startsWith('redstone.')) return 'k-redstone';
   // signals arriving from outside MineLight rather than generated inside it
-  if (kind.startsWith('artnet.') || kind.startsWith('osc.') || kind.startsWith('midi.')
-      || kind.startsWith('mqtt.')) return 'k-in';
+  if (kind.startsWith('control.') || kind.startsWith('artnet.')
+      || kind.startsWith('midi.') || kind.startsWith('mqtt.')) return 'k-in';
   return 'k-other';
 }
 

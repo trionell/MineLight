@@ -362,25 +362,43 @@ public final class WebConsoleServer implements ProtocolServer {
     private void onClientMessage(JsonObject msg) {
         String type = msg.get("type").getAsString();
         switch (type) {
-            case "intensity" -> engine.setFixtureIntensity(
-                    msg.get("fixtureId").getAsInt(), msg.get("value").getAsInt());
+            case "intensity" -> {
+                int id = msg.get("fixtureId").getAsInt();
+                int value = msg.get("value").getAsInt();
+                engine.setFixtureIntensity(id, value);
+                engine.emitControl("web", "fixture",
+                        Map.of("fixtureId", id, "action", "intensity", "value", value));
+            }
             case "set" -> {
                 JsonArray levels = msg.getAsJsonArray("levels");
                 int[] arr = new int[levels.size()];
                 for (int i = 0; i < arr.length; i++) {
                     arr[i] = levels.get(i).getAsInt();
                 }
-                engine.setFixtureLevels(msg.get("fixtureId").getAsInt(), arr);
+                int id = msg.get("fixtureId").getAsInt();
+                engine.setFixtureLevels(id, arr);
+                engine.emitControl("web", "fixture",
+                        Map.of("fixtureId", id, "action", "set",
+                                "levels", java.util.Arrays.toString(arr)));
             }
-            case "preset" -> engine.applyPreset(msg.get("name").getAsString());
+            case "preset" -> {
+                String name = msg.get("name").getAsString();
+                engine.applyPreset(name);
+                engine.emitControl("web", "preset", Map.of("name", name));
+            }
             case "cue" -> {
-                var cl = engine.cueList(msg.get("list").getAsString());
+                String list = msg.get("list").getAsString();
+                var cl = engine.cueList(list);
                 var cue = msg.has("index") ? cl.go(msg.get("index").getAsInt()) : cl.next();
                 if (cue != null && cue.levels() != null) {
                     cue.levels().forEach(engine::setFixtureLevels);
                 }
+                engine.emitControl("web", "cue", Map.of("list", list, "index", cl.index()));
             }
-            case "script" -> engine.triggers().setScript(msg.get("script").getAsString());
+            case "script" -> {
+                engine.triggers().setScript(msg.get("script").getAsString());
+                engine.emitControl("web", "script", Map.of());
+            }
             case "event" -> {
                 Map<String, Object> data = new java.util.HashMap<>();
                 if (msg.has("data")) {

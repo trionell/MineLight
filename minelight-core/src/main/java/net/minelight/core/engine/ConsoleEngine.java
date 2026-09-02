@@ -200,6 +200,27 @@ public final class ConsoleEngine implements ConsoleEngineContext {
         return eventLog;
     }
 
+    /**
+     * Record an inbound control action from a protocol server.
+     *
+     * <p>Setting a level or firing a cue changes DMX and nothing else, so a
+     * fader moved on an OSC surface or a value published over MQTT used to be
+     * invisible to anything watching — the output moved with no trace of what
+     * moved it. Protocol servers call this so the monitor can attribute a
+     * change to the device that caused it.</p>
+     *
+     * @param source protocol the command arrived on ("osc", "http", "mqtt", "web")
+     * @param action what was asked for ("fixture", "preset", "cue", "script")
+     */
+    public void emitControl(String source, String action, Map<String, Object> data) {
+        Map<String, Object> full = new java.util.LinkedHashMap<>();
+        full.put("source", source);
+        if (data != null) {
+            full.putAll(data);
+        }
+        emit(new GameEvent("control." + action, full));
+    }
+
     // ---- DMX ---------------------------------------------------------------
 
     /** Set a single DMX channel (merged output). */

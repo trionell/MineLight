@@ -171,15 +171,22 @@ public final class OscServer implements ProtocolServer {
                 int id = Integer.parseInt(parts[3]);
                 String action = parts[4];
                 if ("intensity".equals(action)) {
-                    engine.setFixtureIntensity(id, toInt(args.get(0)));
+                    int value = toInt(args.get(0));
+                    engine.setFixtureIntensity(id, value);
+                    engine.emitControl("osc", "fixture",
+                            Map.of("fixtureId", id, "action", action, "value", value));
                 } else if ("set".equals(action)) {
                     int[] levels = args.stream().mapToInt(this::toInt).toArray();
                     engine.setFixtureLevels(id, levels);
+                    engine.emitControl("osc", "fixture",
+                            Map.of("fixtureId", id, "action", action,
+                                    "levels", java.util.Arrays.toString(levels)));
                 }
             }
             case "preset" -> {
                 if (parts.length >= 4) {
                     engine.applyPreset(parts[3]);
+                    engine.emitControl("osc", "preset", Map.of("name", parts[3]));
                 }
             }
             case "cue" -> {
@@ -189,6 +196,8 @@ public final class OscServer implements ProtocolServer {
                     if (cue != null && cue.levels() != null) {
                         cue.levels().forEach(engine::setFixtureLevels);
                     }
+                    engine.emitControl("osc", "cue",
+                            Map.of("list", parts[3], "index", cl.index()));
                 }
             }
             case "event" -> {

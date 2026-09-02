@@ -133,7 +133,10 @@ public final class MqttService implements AutoCloseable {
                     int id = Integer.parseInt(parts[parts.length - 2]);
                     JsonObject o = GSON.fromJson(payload, JsonObject.class);
                     if (o.has("intensity")) {
-                        engine.setFixtureIntensity(id, o.get("intensity").getAsInt());
+                        int value = o.get("intensity").getAsInt();
+                        engine.setFixtureIntensity(id, value);
+                        engine.emitControl("mqtt", "fixture",
+                                Map.of("fixtureId", id, "action", "intensity", "value", value));
                     } else if (o.has("levels")) {
                         var arr = o.getAsJsonArray("levels");
                         int[] levels = new int[arr.size()];
@@ -141,6 +144,9 @@ public final class MqttService implements AutoCloseable {
                             levels[i] = arr.get(i).getAsInt();
                         }
                         engine.setFixtureLevels(id, levels);
+                        engine.emitControl("mqtt", "fixture",
+                                Map.of("fixtureId", id, "action", "set",
+                                        "levels", java.util.Arrays.toString(levels)));
                     }
                 } else if (topic.equals(topicPrefix + "/event")) {
                     JsonObject o = GSON.fromJson(payload, JsonObject.class);

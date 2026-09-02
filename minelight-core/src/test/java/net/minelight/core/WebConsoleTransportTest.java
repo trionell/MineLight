@@ -17,6 +17,7 @@ import java.net.ServerSocket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -88,6 +89,10 @@ class WebConsoleTransportTest {
                                 .getBytes(StandardCharsets.UTF_8));
                 assertEquals(204, cmd.getResponseCode());
                 assertEquals(222, engine.dmxSnapshot().get(1)[0] & 0xFF);
+                assertEquals("control.fixture",
+                        engine.eventLog().all().get(engine.eventLog().all().size() - 1)
+                                .event().kind(),
+                        "a command from the panel is itself a signal");
 
                 engine.emit(GameEvent.of("custom.probe", "n", 1));
 
@@ -99,10 +104,15 @@ class WebConsoleTransportTest {
                     }
                 }
                 assertNotNull(live, "live telemetry should arrive on the stream");
-                assertEquals(1, live.getAsJsonArray("events").size(),
-                        "only events newer than the state message");
-                assertEquals("custom.probe", live.getAsJsonArray("events").get(0)
-                        .getAsJsonObject().get("kind").getAsString());
+
+                // exactly the two signals raised since the state message: the
+                // panel's own command, then the emitted event
+                var kinds = new java.util.ArrayList<String>();
+                for (var e : live.getAsJsonArray("events")) {
+                    kinds.add(e.getAsJsonObject().get("kind").getAsString());
+                }
+                assertEquals(List.of("control.fixture", "custom.probe"), kinds,
+                        "only events newer than the state message, in order");
                 assertEquals(222, live.getAsJsonObject("dmx").getAsJsonArray("1")
                         .get(0).getAsInt(), "live push carries DMX");
             }
