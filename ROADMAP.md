@@ -9,44 +9,15 @@ Git history holds the detail — keep entries here short enough to scan.
 
 ## Next
 
-### Sound blocks react to real audible sound
+### Console levels cannot drive the world
 
-The headline gap. Sound blocks are currently a stub: they do not read audio at all. The
-only inputs are punching a note block and a TNT entity spawning, so a sound block flickers
-when TNT is *lit* and does nothing when it explodes.
-
-**Requirement:** sound blocks react to the sounds a player actually hears, at the moment
-they hear them.
-
-The server has no audio, but it originates nearly every gameplay sound with position,
-category, volume and pitch. Hooking that path is the route — it needs the mod's first
-mixin, and `SoundBridge` reworked from a single global scalar to per-block positional
-mixing.
-
-Open question to settle before building: "audible" measured from the player's ears or
-from the block's position. It changes the design and should be a deliberate choice.
-
-Not in scope here: note blocks get their own dedicated block later.
-
-### Sound defects worth fixing regardless
-
-Independent of the rework above, and small:
-
-- `radius` is ignored for LEVEL, BEAT and SPECTRUM — the level is one global scalar, so
-  every block reads identically wherever it is placed. Only NOTE checks range.
-- SPECTRUM has no frequency content. Bands are a fixed ratio of one number, so the hue
-  never changes and only brightness moves.
-- BEAT swallows the first transient. `runningAvg` is seeded with the first sample, so a
-  lone impulse cannot exceed its own average.
-- LEVEL decays twice per tick — `SoundEngine.tick()` and `processLevel` both subtract.
+Inbound Art-Net only emits an event carrying the first 8 channels; it never writes the
+DMX buffer feedback blocks read. A desk cannot push levels back into Minecraft.
 
 ---
 
 ## Later
 
-- **Console levels cannot drive the world.** Inbound Art-Net only emits an event carrying
-  the first 8 channels; it never writes the DMX buffer feedback blocks read. A desk
-  cannot push levels back into Minecraft.
 - **Same-host Art-Net does not work.** UDP 6454 is contended, and the echo filter drops
   packets from any local address, so a console on the same machine is invisible. Needs a
   more precise self-check than "is this address local".
@@ -60,6 +31,17 @@ Independent of the rework above, and small:
   the save format, so it wants its own branch.
 - **MQTT and MIDI are never started.** Both services exist but nothing instantiates them,
   so they are unreachable in game. MIDI inputs are reported as available, not connected.
+- **A replaced sound block keeps the old mode.** `SoundBlockEntity.registerWithEngine`
+  reuses any engine block at the same position whatever its mode, so putting a spectrum
+  block where a meter used to stand leaves it behaving as a meter. Seen while testing
+  positional mixing with `/setblock`.
+- **Sound blocks ignore dimension.** A block only stores x/y/z, so a meter in the Nether
+  hears an explosion at the same coordinates in the Overworld. Found while building
+  positional mixing.
+- **Sounds sent as level events are missed.** `playSeededSound` and `explode` cover
+  nearly everything, but jukebox records and a few block interactions travel as
+  `levelEvent` ids the client turns into sound, so they never reach a sound block. A
+  jukebox driving the lights is the obvious one to want.
 - **README targets Minecraft 1.21.8.** Stale since the 26.2 port.
 
 ---
@@ -68,6 +50,17 @@ Independent of the rework above, and small:
 
 Grouped, most recent first. See git history for specifics.
 
+- **Sound blocks hear the world.** The mod's first mixin taps
+  `ServerLevel.playSeededSound`, the funnel every gameplay sound passes through, plus
+  `explode` — an explosion's sound rides inside its own packet and would otherwise be
+  the one thing a sound block could not hear. Each block is now a microphone at its own
+  position: sounds are attenuated over their own audible range, gated by the block's
+  radius, and summed as power per tick, so radius finally means something and two blocks
+  in different rooms read differently. Frequency is estimated from the sound's name and
+  pitch, which gives SPECTRUM real hue movement, and note blocks reach NOTE fixtures
+  however they were triggered rather than only when punched. The old stub — one global
+  scalar bumped by lit TNT — is gone, along with BEAT swallowing the first transient and
+  LEVEL decaying twice per tick.
 - **Events over DMX.** Event ports carry an optional universe and channel and pulse it on
   the rising edge, so a desk can trigger on a block. Lua gained `dmx()` and `pulse()`,
   extending the same route to any game event.

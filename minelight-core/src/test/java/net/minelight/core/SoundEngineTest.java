@@ -99,6 +99,131 @@ class SoundEngineTest {
         assertEquals(0, u1[41] & 0xFF);          // B = treble
     }
 
+    // ---- positional mixing --------------------------------------------------
+
+    /** Volume 1 at 16 blocks of range, the vanilla default for most sounds. */
+    private static void play(ConsoleEngine engine, double x, double y, double z, String name) {
+        engine.sound().onSound(x, y, z, name, 1.0, 1.0, 16.0);
+    }
+
+    @Test
+    void aSoundIsQuieterFurtherFromTheBlock() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var near = engine.sound().add(SoundEngine.Mode.LEVEL, "Near", 0, 64, 0);
+        near.channel = 1;
+        near.radius = 32;
+        var far = engine.sound().add(SoundEngine.Mode.LEVEL, "Far", 12, 64, 0);
+        far.channel = 2;
+        far.radius = 32;
+
+        play(engine, 0.5, 64.5, 0.5, "entity.generic.explode");
+        engine.sound().tick();
+
+        byte[] u1 = engine.dmxSnapshot().get(1);
+        int n = u1[0] & 0xFF, f = u1[1] & 0xFF;
+        assertEquals(255, n, "a block standing on the sound hears it at full level");
+        assertTrue(f > 0 && f < n / 2, "a block 12 away hears it much quieter, got " + f);
+    }
+
+    @Test
+    void aSoundOutsideTheRadiusIsNotHeard() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var block = engine.sound().add(SoundEngine.Mode.LEVEL, "Meter", 0, 64, 0);
+        block.channel = 5;
+        block.radius = 4;
+
+        play(engine, 10.5, 64.5, 0.5, "entity.generic.explode"); // inside range, outside radius
+        engine.sound().tick();
+        assertNull(engine.dmxSnapshot().get(1), "nothing written for a sound past the radius");
+    }
+
+    @Test
+    void sameTickSoundsSumAsPower() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var block = engine.sound().add(SoundEngine.Mode.LEVEL, "Meter", 0, 64, 0);
+        block.channel = 5;
+        block.radius = 32;
+
+        play(engine, 8.5, 64.5, 0.5, "block.stone.step"); // exactly half the range away
+        engine.sound().tick();
+        assertEquals(128, engine.dmxSnapshot().get(1)[4] & 0xFF, 1);
+
+        play(engine, 8.5, 64.5, 0.5, "block.stone.step");
+        play(engine, -7.5, 64.5, 0.5, "block.stone.step");
+        engine.sound().tick();
+        // two equal sounds add to sqrt(2)x, not 2x
+        assertEquals(180, engine.dmxSnapshot().get(1)[4] & 0xFF, 2);
+    }
+
+    @Test
+    void levelDecaysOncePerTick() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var block = engine.sound().add(SoundEngine.Mode.LEVEL, "Meter", 0, 64, 0);
+        block.channel = 5;
+        block.decay = 0.25;
+
+        play(engine, 0.5, 64.5, 0.5, "entity.generic.explode");
+        engine.sound().tick();
+        assertEquals(255, engine.dmxSnapshot().get(1)[4] & 0xFF);
+
+        engine.sound().tick(); // silence: one decay step, not two
+        assertEquals(191, engine.dmxSnapshot().get(1)[4] & 0xFF, 1);
+    }
+
+    @Test
+    void spectrumHueFollowsFrequency() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var block = engine.sound().add(SoundEngine.Mode.SPECTRUM, "Spectrum", 0, 64, 0);
+        block.channel = 1;
+
+        play(engine, 0.5, 64.5, 0.5, "entity.generic.explode");
+        engine.sound().tick();
+        byte[] u1 = engine.dmxSnapshot().get(1);
+        int r = u1[0] & 0xFF, g = u1[1] & 0xFF, b = u1[2] & 0xFF;
+        assertTrue(r > g && g > b, "an explosion should read as bass, got " + r + "," + g + "," + b);
+
+        play(engine, 0.5, 64.5, 0.5, "block.glass.break");
+        engine.sound().tick();
+        u1 = engine.dmxSnapshot().get(1);
+        r = u1[0] & 0xFF; g = u1[1] & 0xFF; b = u1[2] & 0xFF;
+        assertTrue(b > g && g > r, "breaking glass should read as treble, got " + r + "," + g + "," + b);
+    }
+
+    @Test
+    void noteBlockSoundDrivesNoteFixtures() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var block = engine.sound().add(SoundEngine.Mode.NOTE, "Keys", 0, 64, 0);
+        block.channel = 10;
+
+        // vanilla plays note n at 2^((n-12)/12); note 6 is a tritone below middle
+        engine.sound().onSound(0.5, 64.5, 0.5, "block.note_block.harp",
+                3.0, Math.pow(2, -0.5), 48.0);
+
+        assertEquals(6, block.lastNote());
+        assertEquals("harp", block.lastInstrument());
+        byte[] u1 = engine.dmxSnapshot().get(1);
+        assertTrue((u1[10] & 0xFF) > 150 && (u1[11] & 0xFF) > 150, "note 6 should be cyan-ish");
+    }
+
+    @Test
+    void aQuietBlockStopsEmitting() throws Exception {
+        ConsoleEngine engine = new ConsoleEngine(Files.createTempDirectory("ml-snd"));
+        var block = engine.sound().add(SoundEngine.Mode.LEVEL, "Meter", 0, 64, 0);
+        block.channel = 5;
+
+        int[] events = {0};
+        engine.addEventListener(e -> {
+            if ("sound.level".equals(e.kind())) {
+                events[0]++;
+            }
+        });
+
+        for (int i = 0; i < 50; i++) {
+            engine.sound().tick();
+        }
+        assertEquals(0, events[0], "silence should not push an event every tick");
+    }
+
     @Test
     void soundBlocksPersist() throws Exception {
         var dir = Files.createTempDirectory("ml-snd");

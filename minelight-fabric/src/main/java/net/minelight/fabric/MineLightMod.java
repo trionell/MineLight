@@ -99,10 +99,11 @@ public final class MineLightMod implements ModInitializer {
                 fixtureBlockBridge = new FixtureBlockBridge(engine);
                 ServerTickEvents.END_SERVER_TICK.register(fixtureBlockBridge::tick);
 
-                // sound-to-light: note blocks + ambient level -> DMX
+                // sound-to-light: world sound -> DMX. The sounds themselves
+                // arrive from ServerLevelSoundMixin, which looks the bridge up
+                // through soundBridge() above.
                 soundBridge = new SoundBridge(engine);
                 ServerTickEvents.END_SERVER_TICK.register(soundBridge::tick);
-                WorldSoundHooks.register(soundBridge);
 
                 LOGGER.info("[MineLight] Engine started. WebConsole: http://localhost:8090/");
             } catch (Exception e) {
@@ -115,6 +116,9 @@ public final class MineLightMod implements ModInitializer {
                 mdns.close();
                 mdns = null;
             }
+            // the sound mixin reaches the bridge statically, so drop it before
+            // the engine goes away rather than feeding a dead one
+            soundBridge = null;
             if (engine != null) {
                 engine.stop();
                 engine = null;
