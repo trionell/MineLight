@@ -156,7 +156,8 @@ public final class FixtureBlockRegistry {
                 po.addProperty("changedAt", state == null ? 0 : state.changedAt());
                 if (port.action() == FixtureBlock.Action.EMIT_EVENT) {
                     po.addProperty("fires", state == null ? 0 : state.fires());
-                } else {
+                }
+                if (port.action() == FixtureBlock.Action.SET_CHANNEL || port.channel() > 0) {
                     po.addProperty("dmx", channelValue(dmx, port.universe(), port.channel()));
                 }
                 ports.add(po);
@@ -235,6 +236,14 @@ public final class FixtureBlockRegistry {
                         if (on && !was) {
                             state.fires++;
                             state.changedAt = System.currentTimeMillis();
+                            // An event port with a channel also pulses it, so a
+                            // desk with no notion of MineLight events can still
+                            // trigger on the block.
+                            if (port.channel() > 0) {
+                                state.value = 255;
+                                engine.pulseDmx(port.universe(), port.channel(),
+                                        255, ConsoleEngine.PULSE_MS);
+                            }
                             emitBlockEvent(port.event(), b, port, raw, raw * 255 / 15);
                         }
                         state.raw = raw;
@@ -268,7 +277,7 @@ public final class FixtureBlockRegistry {
         data.put("z", b.z());
         data.put("raw", raw);
         data.put("value", value);
-        if (port.action() == FixtureBlock.Action.SET_CHANNEL) {
+        if (port.action() == FixtureBlock.Action.SET_CHANNEL || port.channel() > 0) {
             data.put("universe", port.universe());
             data.put("channel", port.channel());
         }

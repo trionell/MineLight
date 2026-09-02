@@ -33,6 +33,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@code minelight.on(kind, fn)} — register an event handler</li>
  *   <li>{@code minelight.set(fixtureId, value[, ...])} — set fixture channels</li>
  *   <li>{@code minelight.intensity(fixtureId, value)} — set first channel</li>
+ *   <li>{@code minelight.dmx(universe, channel, value)} — set a raw channel</li>
+ *   <li>{@code minelight.pulse(universe, channel[, value[, ms]])} — momentary
+ *       trigger on a raw channel; this is how an event reaches a desk that
+ *       only speaks DMX</li>
  *   <li>{@code minelight.preset(name)} — apply a named preset</li>
  *   <li>{@code minelight.cue(listName)} — advance a cue list</li>
  *   <li>{@code minelight.cue(listName, index)} — jump to cue index</li>
@@ -50,7 +54,14 @@ public final class TriggerEngine {
     public static final String DEFAULT_SCRIPT = """
             -- MineLight trigger script
             -- Available: minelight.on, minelight.set, minelight.intensity,
+            --            minelight.dmx, minelight.pulse,
             --            minelight.preset, minelight.cue, minelight.log, minelight.patch
+
+            -- Any game event can be handed to a lighting desk as a momentary
+            -- DMX trigger. Point a console's DMX remote at the channel.
+            -- minelight.on("player.death", function(e)
+            --   minelight.pulse(1, 100)
+            -- end)
 
             minelight.on("redstone.on", function(e)
               minelight.intensity(e.fixtureId, 255)
@@ -141,6 +152,30 @@ public final class TriggerEngine {
             @Override
             public LuaValue call(LuaValue fixtureId, LuaValue value) {
                 engine.setFixtureIntensity(fixtureId.checkint(), value.checkint());
+                return LuaValue.NIL;
+            }
+        });
+
+        // Raw channel access. The fixture-scoped calls above need something
+        // patched; a script reacting to a game event usually just wants to
+        // poke the channel a console is listening on.
+        api.set("dmx", new VarArgFunction() {
+            @Override
+            public LuaValue invoke(org.luaj.vm2.Varargs args) {
+                engine.setDmx(args.arg(1).checkint(), args.arg(2).checkint(),
+                        args.arg(3).checkint());
+                return LuaValue.NIL;
+            }
+        });
+
+        api.set("pulse", new VarArgFunction() {
+            @Override
+            public LuaValue invoke(org.luaj.vm2.Varargs args) {
+                int universe = args.arg(1).checkint();
+                int channel = args.arg(2).checkint();
+                int value = args.narg() > 2 ? args.arg(3).checkint() : 255;
+                long ms = args.narg() > 3 ? args.arg(4).checklong() : ConsoleEngine.PULSE_MS;
+                engine.pulseDmx(universe, channel, value, ms);
                 return LuaValue.NIL;
             }
         });

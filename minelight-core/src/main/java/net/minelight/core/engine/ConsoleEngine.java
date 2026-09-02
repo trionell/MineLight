@@ -45,6 +45,15 @@ public final class ConsoleEngine implements ConsoleEngineContext {
     /** DMX frame rate. */
     public static final int DMX_HZ = 44;
 
+    /**
+     * How long a triggered channel is held up, in milliseconds.
+     *
+     * <p>Long enough that a desk polling its DMX input cannot miss it — at
+     * Art-Net's 40 Hz this is six frames — and short enough to read as a
+     * momentary press rather than a level change.</p>
+     */
+    public static final long PULSE_MS = 150;
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Patch patch = new Patch();
@@ -58,6 +67,9 @@ public final class ConsoleEngine implements ConsoleEngineContext {
 
     /** Merged DMX output: universe -> 512 bytes. */
     private final Map<Integer, byte[]> universes = new ConcurrentHashMap<>();
+
+    /** Generation per pulsed channel, so overlapping pulses release in order. */
+    private final Map<Long, Long> pulseGeneration = new ConcurrentHashMap<>();
 
     /** Redstone readback: fixtureId -> on/off. */
     private final Map<Integer, Boolean> redstoneState = new ConcurrentHashMap<>();
@@ -230,6 +242,34 @@ public final class ConsoleEngine implements ConsoleEngineContext {
         }
         byte[] buf = universes.computeIfAbsent(universe, u -> new byte[512]);
         buf[channel - 1] = (byte) (value & 0xFF);
+    }
+
+    /**
+     * Drive a channel up and let it fall back on its own.
+     *
+     * <p>An event has no level to hold, so to reach a console over DMX it has
+     * to become a momentary pulse the desk can trigger on. Re-firing while a
+     * pulse is still up extends it rather than cutting it short: each pulse
+     * takes a generation number, and a scheduled release only fires if it
+     * still owns the channel.</p>
+     */
+    public void pulseDmx(int universe, int channel, int value, long holdMs) {
+        if (channel < 1 || channel > 512) {
+            return;
+        }
+        long key = ((long) universe << 32) | (channel & 0xFFFFFFFFL);
+        long generation = pulseGeneration.merge(key, 1L, Long::sum);
+        setDmx(universe, channel, value);
+        try {
+            scheduler.schedule(() -> {
+                Long current = pulseGeneration.get(key);
+                if (current != null && current == generation) {
+                    setDmx(universe, channel, 0);
+                }
+            }, holdMs, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // shutting down: leave the channel where it is, nothing will read it
+        }
     }
 
     /** Set a fixture's channels from a preset-level array (offset by mode). */

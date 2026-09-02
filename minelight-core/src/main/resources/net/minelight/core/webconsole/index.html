@@ -442,12 +442,17 @@ function portTable(b) {
   const rows = (b.ports || []).map(p => {
     const raw = p.raw || 0;
     if (p.action === 'EMIT_EVENT') {
+      // A pulse channel is optional; without one the event stays internal.
+      const target = p.channel > 0
+        ? `${esc(p.event || '—')} <span style="color:var(--muted)">→ u${p.universe}.${p.channel}</span>`
+        : esc(p.event || '—');
+      const lit = p.channel > 0 && (p.dmx || 0) > 0;
       return `<tr>
         <td>${esc(p.name)}</td>
         <td>${esc(p.side)}</td>
-        <td colspan="2">${esc(p.event || '—')}</td>
+        <td colspan="2">${target}</td>
         <td class="num">${raw}/15</td>
-        <td class="num" title="times fired">${p.fires || 0}×</td>
+        <td class="num" title="times fired" style="${lit ? 'color:var(--accent)' : ''}">${p.fires || 0}×</td>
       </tr>`;
     }
     const dmx = p.dmx || 0;

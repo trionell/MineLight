@@ -22,8 +22,10 @@ import java.util.Map;
  *
  * <p>One control per row, label on the left and widget on the right: the
  * redstone face a port reads, and its target — a DMX universe and channel for
- * dimmer/RGB/feedback blocks, or an event name for event blocks. Edits are
- * sent to the server as they are made.</p>
+ * dimmer/RGB/feedback blocks, or an event name for event blocks. Event ports
+ * carry a universe and channel too: leave the channel at 0 for a
+ * MineLight-only event, or set one to also pulse it so a lighting desk can
+ * trigger on the block. Edits are sent to the server as they are made.</p>
  */
 public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler> {
 
@@ -52,11 +54,14 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
         super(handler, inventory, title, DEFAULT_IMAGE_WIDTH, 40 + rowCount(handler.ports()) * ROW_H);
     }
 
-    /** A channel port needs side/universe/channel; an event port side/event. */
+    /**
+     * A channel port needs side/universe/channel; an event port adds the
+     * event name in front of the same universe/channel pair.
+     */
     private static int rowCount(List<FixtureBlock.PortMapping> ports) {
         int rows = 0;
         for (FixtureBlock.PortMapping port : ports) {
-            rows += port.action() == FixtureBlock.Action.SET_CHANNEL ? 3 : 2;
+            rows += port.action() == FixtureBlock.Action.SET_CHANNEL ? 3 : 4;
         }
         return rows;
     }
@@ -87,24 +92,28 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
             }).bounds(this.leftPos + FIELD_X, y, FIELD_W, 20).build());
             y += ROW_H;
 
-            if (port.action() == FixtureBlock.Action.SET_CHANNEL) {
-                rowLabels.add(prefix + "universe");
-                addRenderableWidget(field(y, String.valueOf(port.universe()), "universe",
-                        s -> updateChannel(name, s, null)));
-                y += ROW_H;
-
-                rowLabels.add(prefix + "channel");
-                addRenderableWidget(field(y, String.valueOf(port.channel()), "channel",
-                        s -> updateChannel(name, null, s)));
-                y += ROW_H;
-            } else {
+            if (port.action() == FixtureBlock.Action.EMIT_EVENT) {
                 rowLabels.add(prefix + "event");
                 addRenderableWidget(field(y, port.event() == null ? "" : port.event(), "event", s -> {
+                    // Keep the pulse target: rebuilding the mapping from the
+                    // event name alone would silently zero the channel.
                     FixtureBlock.PortMapping current = working.get(name);
-                    push(FixtureBlock.PortMapping.event(name, current.side(), s));
+                    push(new FixtureBlock.PortMapping(name, current.side(), current.action(),
+                            current.universe(), current.channel(), s));
                 }));
                 y += ROW_H;
             }
+
+            rowLabels.add(prefix + "universe");
+            addRenderableWidget(field(y, String.valueOf(port.universe()), "universe",
+                    s -> updateChannel(name, s, null)));
+            y += ROW_H;
+
+            rowLabels.add(prefix + (port.action() == FixtureBlock.Action.EMIT_EVENT
+                    ? "pulse ch" : "channel"));
+            addRenderableWidget(field(y, String.valueOf(port.channel()), "channel",
+                    s -> updateChannel(name, null, s)));
+            y += ROW_H;
         }
     }
 
@@ -130,7 +139,10 @@ public class FixtureScreen extends AbstractContainerScreen<FixtureScreenHandler>
         } catch (NumberFormatException e) {
             return;
         }
-        push(FixtureBlock.PortMapping.channel(name, current.side(), universe, channel));
+        // Preserve the action and event name: an event port keeps emitting its
+        // event, the universe and channel only add a DMX pulse alongside it.
+        push(new FixtureBlock.PortMapping(name, current.side(), current.action(),
+                universe, channel, current.event()));
     }
 
     private void push(FixtureBlock.PortMapping mapping) {
